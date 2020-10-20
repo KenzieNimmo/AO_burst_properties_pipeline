@@ -17,7 +17,7 @@ import pickle
 import os
 import re
 import optparse
-import psrfits
+import psrfits_pipe as psrfits
 import pandas as pd
 
 
