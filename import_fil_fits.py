@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 from scipy.interpolate import interp1d as interp
 import matplotlib.pyplot as plt
-import psrfits
+import psrfits_pipe as psrfits
 from astropy.io import fits as astrofits
 import pandas as pd
 
