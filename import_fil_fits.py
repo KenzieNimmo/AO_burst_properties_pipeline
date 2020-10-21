@@ -2,7 +2,7 @@
 Makes an array (masked or not) from a filterbank or fits file. Also applies bandpass correction using an offpulse region.
 """
 
-import filterbank
+import fb_pipe as filterbank
 import numpy as np
 import pickle
 from scipy.interpolate import interp1d as interp
@@ -66,27 +66,33 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
         sample_per_subint=subint_hdr['NSBLK']
         time_from_orig_begin_time=(begin_subint*sample_per_subint*t_samp)/(24*3600.) #MJD
         new_tstart=tstart+time_from_orig_begin_time
+
         if hdf5!=None and index!=None:
             hdf5_file = hdf5
             index = int(index)
             pulses = pd.read_hdf(hdf5_file, 'pulses')
             pulses=pulses.loc[pulses['Pulse'] == 0]
             burst_time=pulses.loc[index,'Time']/(24*3600.)+tstart #MJD
+
+            #NB: There is an offset between the burst peak time determined above and the burst by ~4.5ms. 
+            # I think this is a dedispersion artefact but not sure. At the moment hard-coding a shift
+            burst_time-=(4.5e-3/(24*3600.)) #MJD
+
         else: print("Please provide the hdf5 file containing the burst properties and the burst index from the search pipeline.")
 
         burstt=(burst_time-new_tstart)*24*3600. #time in seconds of burst in cropped fits fileim
-        peak_bin = burstt/t_samp
+        peak_bin = int(burstt/t_samp)
 
-        begin_bin=0 #number of bins
-        peak_subint=int(np.floor(peak_bin/sample_per_subint))
-        end_bin=int(peak_subint+6.)*sample_per_subint
+        #begin_bin=0 #number of bins
+        #peak_subint=int(np.floor(peak_bin/sample_per_subint))
+        #end_bin=int(peak_subint+6.)*sample_per_subint
 
-        spec=fits.get_spectra(begin_bin,end_bin)
+        spec=fits.get_spectra(0,total_N)
 
     else: spec=fits.get_spectra(0,total_N)
 
     if dm!=None:
-        spec.dedisperse(dm, padval='mean')
+        spec.dedisperse(dm, padval='mean',trim=True)
 
 
     arr = np.array([spec[i] for i in xrange(fits.specinfo.num_channels)])
@@ -104,7 +110,8 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
     if bandpass==True and offpulse!=None:
         arr=bp(arr,maskfile,offpulse,AO=AO,smooth_val=smooth_val)
     if AO==True:
-        return arr, new_tstart, peak_bin
+        arr = arr[:,peak_bin-int(20e-3/t_samp):peak_bin+int(20e-3/t_samp)]
+        return arr, new_tstart, int(arr.shape[1]/2.)
     else:
         return arr
 
@@ -163,6 +170,9 @@ def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None):
     Uses off pulse data (identified using interactive RFI_zapper.py) to normalise the spectrum and
     calibrate the bandpass
     """
+    if smooth_val % 2 ==0:
+        print("Please give an ODD smoothing value (2n+1) for the bandpass calibration")
+        sys.exit()
 
     offpulse=pickle.load(open(offpulsefile,'rb'))
     spec = np.mean(arr[:,offpulse],axis=1)
@@ -176,7 +186,8 @@ def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None):
         amask=[speclen-int(i)-1 for i in amaskfile]
         mask[amask]=1
     if smooth_val!=None:
-        spec = smooth(spec,window_len=smooth_val)[:speclen]
+        a = (smooth_val-1/2.)
+        spec = smooth(spec,window_len=smooth_val)[a+1:-(a-1)]
         spec = np.ma.masked_where(mask==True,spec)
 
     arr2=arr.copy()

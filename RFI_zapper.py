@@ -54,7 +54,7 @@ class offpulse(object):
             if (nsamples/tavg)-int(nsamples/tavg)!=0:
                 print("The total number of time bins is %s, please choose an tscrunch value that divides the total number of samples."%nsamples)
                 sys.exit()
-	        else:
+            else:
                 newsamps=nsamples/tavg
                 tavg=int(tavg)
                 profile=np.mean(profile.reshape(-1, tavg), axis=1)
@@ -63,9 +63,10 @@ class offpulse(object):
         ax2.tick_params(axis='y', which='both', left='off', right='off', labelleft='off')
         ax2.tick_params(axis='x', labelbottom='off', top='off')
         y_range = profile.max() - profile.min()
-        ax2.set_ylim(profile.min()-y_range*0.15, profile.max()*1.1)
+        ax2.set_ylim(profile.min()-y_range*0.15, profile.max()+y_range*0.1)
         ax2.tick_params(labelbottom=False, labeltop=False, labelleft=False, labelright=False, bottom=True, top=True, left=True, right=True)
-        ax2.axvline(peak_bin/tavg,color='r')
+        ax2.axvline((peak_bin/tavg)-(5e-3/(tavg*tsamp)),color='r',linestyle='--')
+        ax2.axvline((peak_bin/tavg)+(5e-3/(tavg*tsamp)),color='r',linestyle='--')
         fig.add_subplot(ax2)
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
@@ -178,7 +179,7 @@ class RFI(object):
         self.ax1plot = self.ax1.imshow(arr,aspect='auto',vmin=np.amin(arr),vmax=threshold,cmap=self.cmap,origin='lower',interpolation='nearest',picker=True)
         self.cmap.set_over(color='pink')
         self.cmap.set_bad(color='red')
-        self.ax1.set_xlim((peak_bin-(0.1/tsamp))/tavg,(peak_bin+(0.1/tsamp))/tavg)
+        self.ax1.set_xlim((peak_bin-(20e-3/tsamp))/tavg,(peak_bin+(20e-3/tsamp))/tavg)
 
         self.ax3plot, = self.ax3.plot(spectrum, self.freqbins, 'k-',zorder=2)
         self.ax3.tick_params(axis='x', which='both', top='off', bottom='off', labelbottom='off')
@@ -269,7 +270,7 @@ class RFI(object):
                 spectrum =  np.mean(arr,axis=1)
                 self.ax3.set_xlim(np.amin(spectrum),np.amax(spectrum))
                 y_range = profile.max() - profile.min()
-                self.ax2.set_ylim(profile.min()-y_range*0.1, profile.max()*1.1)
+                self.ax2.set_ylim(profile.min()-y_range*0.1, profile.max()+y_range*0.1)
 
                 self.cmap.set_over(color='pink')
                 plt.draw()
@@ -293,7 +294,7 @@ if __name__ == '__main__':
                       help="If -t option is used, time averaging is applied using the factor given after -t.", default=1)
 
     (options, args) = parser.parse_args()
-    print(args)
+    
     if len(args)==0:
         parser.print_help()
         sys.exit(1)
@@ -321,6 +322,7 @@ if __name__ == '__main__':
     tavg = options.tavg
     favg = options.favg
 
+    #pulses_arr=[8898,9362]
     for i in range(len(pulses_arr)):
         print("RFI zapping of observation %s, pulse ID %s"%(BASENAME,pulses_arr[i]))
 
@@ -377,9 +379,9 @@ if __name__ == '__main__':
         with open(maskfile, 'wb') as fmask:
             pickle.dump(mask_chans, fmask)
 
-        #if i == 0:
-        #    bursts = {}
-        #bursts[str(pulses_arr[i])]={}
+        if i == 0:
+            bursts = {}
+        bursts[str(pulses_arr[i])]={}
         #if smooth == 0:
         #    smooth_val = None
         #else:
@@ -396,10 +398,10 @@ if __name__ == '__main__':
         #bursts[str(pulses_arr[i])]['t_samp']=t_samp
         #bursts[str(pulses_arr[i])]['tstart']=tstart
         #bursts[str(pulses_arr[i])]['freqs']=freqs
-        #bursts[str(pulses_arr[i])]['DM']=dm
+        bursts[str(pulses_arr[i])]['DM']=dm
 
         os.chdir('..')
 
-    #df = pd.DataFrame(data=bursts)
+    df = pd.DataFrame(data=bursts)
     #print(df)
-    #df.to_hdf('%s_pulses.hdf5'%BASENAME,'%s'%BASENAME)
+    df.to_hdf('%s_pulses.hdf5'%BASENAME,'%s'%BASENAME)

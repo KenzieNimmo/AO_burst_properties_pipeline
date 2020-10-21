@@ -144,16 +144,14 @@ utput from fit_burst_fb.py.")
 
     #getting the basename of the observation and pulse IDs
     BASENAME = options.infile
-    OUT_DIR = '/data1/nimmo/121102_AO/pipeline_products/%s/pulses/'%BASENAME
     PULSES_TXT = 'pulse_nos.txt'
     #hdf5 file
     orig_in_hdf5_file='../%s.hdf5'%BASENAME
     in_hdf5_file='%s_burst_properties.hdf5'%BASENAME
     out_hdf5_file=in_hdf5_file
 
-    smooth=1 #smoothing value used for bandpass calibration
+    smooth=7 #smoothing value used for bandpass calibration
 
-    os.chdir('%s'%OUT_DIR)
     pulses=open('%s'%PULSES_TXT)
     pulses_str = []
     pulses_arr = []
@@ -163,8 +161,6 @@ utput from fit_burst_fb.py.")
     for i in range(len(pulses_str)-1):
         pulses_arr.append(int(pulses_str[i].replace('/\n','')))
 
-    #hardcoded for testing
-    pulses_arr=[8898,9362]
 
     SEFDs=[]
     Fluences=[]

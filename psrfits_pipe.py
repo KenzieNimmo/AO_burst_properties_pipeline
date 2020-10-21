@@ -20,7 +20,7 @@ from astropy import coordinates, units
 import astropy.time as aptime
 import numpy as np
 import psr_utils
-import spectra
+import spectra_pipe as spectra
 
 # Regular expression for parsing DATE-OBS card's format.
 date_obs_re = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-" \
@@ -241,8 +241,7 @@ class PsrfitsFile(object):
         else:
             freqs = self.freqs
 
-            print(data.shape)
-            print(len(freqs))
+
             return spectra.Spectra(freqs, self.tsamp, data, \
                                starttime=self.tsamp*startsamp, dm=0)
 

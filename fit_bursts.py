@@ -4,6 +4,7 @@ Kenzie Nimmo 2020
 import sys
 import numpy as np
 import import_fil_fits
+sys.path.append('/home/nimmo/AO_burst_properties_pipeline/')
 from fit_repeater_bursts import fit_my_smudge
 import filterbank
 import os
@@ -36,16 +37,14 @@ if __name__ == '__main__':
 
     #getting the basename of the observation and pulse IDs
     BASENAME = options.infile
-    OUT_DIR = '/data1/nimmo/121102_AO/pipeline_products/%s/pulses/'%BASENAME
     PULSES_TXT = 'pulse_nos.txt'
     #hdf5 file
     orig_in_hdf5_file='../%s.hdf5'%BASENAME
     in_hdf5_file='%s_burst_properties.hdf5'%BASENAME
     out_hdf5_file=in_hdf5_file
 
-    smooth=1 #smoothing value used for bandpass calibration
+    smooth=7 #smoothing value used for bandpass calibration
 
-    os.chdir('%s'%OUT_DIR)
     pulses=open('%s'%PULSES_TXT)
     pulses_str = []
     pulses_arr = []
@@ -55,9 +54,7 @@ if __name__ == '__main__':
     for i in range(len(pulses_str)-1):
         pulses_arr.append(int(pulses_str[i].replace('/\n','')))
 
-    #hardcoded for testing
-    pulses_arr=[8898,9362]
-
+    
     t_cent = []
     t_cent_e = []
     t_width = []
@@ -90,11 +87,6 @@ if __name__ == '__main__':
 
         waterfall,t,peak_bin=import_fil_fits.fits_to_np(filename,dm=dm,maskfile=maskfile,bandpass=True,offpulse=offpulsefile,AO=True,smooth_val=smooth,hdf5=orig_in_hdf5_file,index=pulses_arr[i])
 
-        #fix peak_bin problem!!!
-        begin_bin=int(peak_bin-(30e-3/tsamp))
-        end_bin = int(peak_bin+(30e-3/tsamp))
-
-        waterfall=waterfall[:,begin_bin:end_bin]
 
         prof = np.mean(waterfall,axis=0)
         spec = np.mean(waterfall,axis=1)
