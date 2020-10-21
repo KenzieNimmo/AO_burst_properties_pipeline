@@ -304,11 +304,9 @@ if __name__ == '__main__':
 
 
     BASENAME = options.infile
-    OUT_DIR = '/data1/nimmo/121102_AO/pipeline_products/%s/pulses/'%BASENAME
     PULSES_TXT = 'pulse_nos.txt'
     in_hdf5_file='../%s.hdf5'%BASENAME
     #find pulses in this dataset
-    os.chdir('%s'%OUT_DIR)
     os.system('ls -d */ > %s'%PULSES_TXT)
     pulses=open('%s'%PULSES_TXT)
     pulses_str = []
