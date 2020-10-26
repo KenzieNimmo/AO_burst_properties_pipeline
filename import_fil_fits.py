@@ -110,7 +110,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
     if bandpass==True and offpulse!=None:
         arr=bp(arr,maskfile,offpulse,AO=AO,smooth_val=smooth_val)
     if AO==True:
-        arr = arr[:,peak_bin-int(20e-3/t_samp):peak_bin+int(20e-3/t_samp)]
+        arr = arr[:,peak_bin-int(50e-3/t_samp):peak_bin+int(50e-3/t_samp)]
         return arr, new_tstart, int(arr.shape[1]/2.)
     else:
         return arr
@@ -186,9 +186,12 @@ def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None):
         amask=[speclen-int(i)-1 for i in amaskfile]
         mask[amask]=1
     if smooth_val!=None:
-        a = (smooth_val-1/2.)
-        spec = smooth(spec,window_len=smooth_val)[a+1:-(a-1)]
-        spec = np.ma.masked_where(mask==True,spec)
+        print("Caution: smoothing is not currently implemented.")
+        print("Not smoothing the bandpass")
+        a = int((smooth_val-1)/2.)
+        #spec = np.ma.masked_where(mask==True,spec)
+        #spec = smooth(spec,window_len=smooth_val)[a-1:-(a+1)]
+        #spec = np.ma.masked_where(mask==True,spec)
 
     arr2=arr.copy()
 
