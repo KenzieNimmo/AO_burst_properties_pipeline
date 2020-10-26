@@ -179,7 +179,7 @@ class RFI(object):
         self.ax1plot = self.ax1.imshow(arr,aspect='auto',vmin=np.amin(arr),vmax=threshold,cmap=self.cmap,origin='lower',interpolation='nearest',picker=True)
         self.cmap.set_over(color='pink')
         self.cmap.set_bad(color='red')
-        self.ax1.set_xlim((peak_bin-(20e-3/tsamp))/tavg,(peak_bin+(20e-3/tsamp))/tavg)
+        self.ax1.set_xlim((peak_bin-(50e-3/tsamp))/tavg,(peak_bin+(50e-3/tsamp))/tavg)
 
         self.ax3plot, = self.ax3.plot(spectrum, self.freqbins, 'k-',zorder=2)
         self.ax3.tick_params(axis='x', which='both', top='off', bottom='off', labelbottom='off')
@@ -322,7 +322,11 @@ if __name__ == '__main__':
     tavg = options.tavg
     favg = options.favg
 
-    #pulses_arr=[8898,9362]
+
+    DMs= [] #for the DMs
+    ind1 = [] #for the burst name indices
+    ind2 = [] # for the sub burst name indices
+    pulses_arr = [9362]
     for i in range(len(pulses_arr)):
         print("RFI zapping of observation %s, pulse ID %s"%(BASENAME,pulses_arr[i]))
 
@@ -379,29 +383,49 @@ if __name__ == '__main__':
         with open(maskfile, 'wb') as fmask:
             pickle.dump(mask_chans, fmask)
 
-        if i == 0:
-            bursts = {}
-        bursts[str(pulses_arr[i])]={}
-        #if smooth == 0:
-        #    smooth_val = None
-        #else:
-        #    smooth_val = smooth
-        #if filename.endswith(".fits"):
-        #    if options.bandpass ==True:
-        #        bursts[str(pulses_arr[i])]['array_corrected'], bursts[str(pulses_arr[i])]['tstart'] =import_fil_fits.fits_to_np(filename,dm=dm, maskfile=maskfile, bandpass=True, offpulse=offpulsefile, smooth_val=smooth_val,AO=True,hdf5=in_hdf5_file,index=pulses_arr[i]) #zapped and bp corrected array
-        #    else:
-        #        bursts[str(pulses_arr[i])]['array_corrected'], bursts[str(pulses_arr[i])]['tstart']=import_fil_fits.fits_to_np(filename,dm=dm, maskfile=maskfile, bandpass=False, offpulse=offpulsefile, smooth_val=smooth_val,AO=True,hdf5=in_hdf5_file,index=pulses_arr[i]) #zapped array
-            #burst['array_uncorrected']=import_fil_fits.fits_to_np(filename,dm=dm,maskfile=None,bandpass=False,offpulse=None,smooth_val=smooth_val,AO=True)
-            #burst['undedisp_array']=import_fil_fits.fits_to_np(filename,dm=0, maskfile=maskfile, bandpass=False, offpulse=offpulsefile, smooth_val=smooth_val,AO=False)
 
-        #bursts[str(pulses_arr[i])]['mask']=mask_chans
-        #bursts[str(pulses_arr[i])]['t_samp']=t_samp
-        #bursts[str(pulses_arr[i])]['tstart']=tstart
-        #bursts[str(pulses_arr[i])]['freqs']=freqs
-        bursts[str(pulses_arr[i])]['DM']=dm
+        #Are there sub-bursts?
+        answer=raw_input("Does the burst have multiple components? (y/n) ")
+        if answer == 'y':
+            answer_sub=raw_input("How many? (integer) ")
+        if answer == 'n':
+            answer_sub = int(1)
+
+
+        DMs = np.append(DMs,(np.zeros(int(answer_sub))+dm))
+        for j in range(int(answer_sub)):
+            ind1 = np.append(ind1,str(pulses_arr[i]))
+            ind2 = np.append(ind2,'sb'+str(j+1))
+        
+        
+        #Are there other bursts in this file?
+        answer=raw_input("Are there other (separate) bursts in this file? (y/n) ")
+        if answer == 'y':
+            answer_burst=raw_input("How many? (integer) ")
+            answer_burst_sub = raw_input("Does this (these) burst(s) have multiple components? (y/n) ")
+            if answer_burst_sub == 'y':
+                sub_components_other_bursts = raw_input("Give the number of components per burst (in order of arrival time -- excluding first burst), separated by commas e.g. 3,2,1,3 ")
+                vals = [int(x.strip()) for x in sub_components_other_bursts.split(',')]
+                
+            if answer_burst_sub == 'n':
+                vals = np.ones(int(answer_burst))
+
+        if answer == 'n':
+            answer_burst = int(1)
+
+        if answer_burst > 1:
+          for bu in range(int(answer_burst)):
+              for sb in range(int(vals[bu])):
+                  ind1=np.append(ind1,str(pulses_arr[i])+'-'+str(bu+1))
+                  ind2=np.append(ind2,'sb'+str(sb+1))
+                  DMs = np.append(DMs,dm)
+        
+        
 
         os.chdir('..')
 
-    df = pd.DataFrame(data=bursts)
-    #print(df)
-    df.to_hdf('%s_pulses.hdf5'%BASENAME,'%s'%BASENAME)
+    indices = [np.array([str(x) for x in ind1]),np.array(ind2)]
+    bursts={'DM':DMs}
+    df = pd.DataFrame(data=bursts,index=indices)
+    print(df)
+    df.to_hdf('%s_burst_properties.hdf5'%BASENAME,'pulses')
