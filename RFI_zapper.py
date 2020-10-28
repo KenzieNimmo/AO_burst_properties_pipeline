@@ -26,6 +26,37 @@ def find_nearest(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
+class identify_bursts(object):
+    def __init__(self,profile,gs,peak_bin,tavg,tsamp):
+        self.peak_times=[]
+        self.peak_amps=[]
+
+        ax1 = plt.subplot(gs[0]) #profile
+        self.axes = ax1
+        self.canvas = ax1.figure.canvas
+
+        self.ax1plot, = ax1.plot(profile, 'k-',alpha=1.0,zorder=1)
+        y_range = profile.max() - profile.min()
+        ax1.set_ylim(profile.min()-y_range*0.15, profile.max()+y_range*0.1)
+        ax1.axvline((peak_bin/tavg)-(5e-3/(tavg*tsamp)),color='r',linestyle='--')
+        ax1.axvline((peak_bin/tavg)+(5e-3/(tavg*tsamp)),color='r',linestyle='--')
+        fig.add_subplot(ax1)
+
+        self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
+        indices = np.array(self.peak_times).argsort()
+        self.peak_times = np.array(self.peak_times)[indices]
+        self.peak_amps =  np.array(self.peak_amps)[indices]
+    
+    def onpress(self, event):
+        tb = get_current_fig_manager().toolbar
+        if tb.mode == '':
+            y1= event.ydata
+            x1= event.xdata
+            self.peak_times=np.append(self.peak_times,x1)
+            self.peak_amps=np.append(self.peak_amps,y1)
+            self.axes.scatter(x1,y1,lw=3,color='r',marker='x',s=100,zorder=10)
+            plt.draw()
+
 class offpulse(object):
     def __init__(self,filename,gs,dm,AO,in_hdf5_file,pulseindex,tavg):
         self.begin_times=[]
@@ -46,6 +77,8 @@ class offpulse(object):
             fits=psrfits.PsrfitsFile(filename)
             tsamp = fits.specinfo.dt
             arr, startt, peak_bin = import_fil_fits.fits_to_np(filename,dm=dm,maskfile=None,bandpass=False,offpulse=None,AO=True,hdf5=in_hdf5_file,index=pulseindex)
+            self.peak_bin=peak_bin
+            self.tsamp=tsamp
 
         profile=np.mean(arr,axis=0)
         if tavg>1:
@@ -282,7 +315,7 @@ class RFI(object):
                         self.mask_chan.append(np.arange(self.begin_chan[-1],index2+1,1)[i])
 
                 self.final_spec = np.mean(arr,axis=1)
-
+                self.final_prof = np.mean(arr,axis=0)
 
 if __name__ == '__main__':
     parser = optparse.OptionParser(usage='%prog [options] infile_basename', \
@@ -326,6 +359,8 @@ if __name__ == '__main__':
     DMs= [] #for the DMs
     ind1 = [] #for the burst name indices
     ind2 = [] # for the sub burst name indices
+    peak_times=[]
+    amps=[]
     pulses_arr = [9362]
     for i in range(len(pulses_arr)):
         print("RFI zapping of observation %s, pulse ID %s"%(BASENAME,pulses_arr[i]))
@@ -360,6 +395,10 @@ if __name__ == '__main__':
 
         RFImask = RFI(filename,gs,prof,ds,spec,ithres,ax2,dm,True,in_hdf5_file,pulses_arr[i],favg,tavg)
         plt.show()
+
+        profile=RFImask.final_prof
+        peak_bin=offpulse_prof.peak_bin
+        tsamp=offpulse_prof.tsamp
 
         begin_times = offpulse_prof.begin_times
         end_times = offpulse_prof.end_times
@@ -420,12 +459,38 @@ if __name__ == '__main__':
                   ind2=np.append(ind2,'sb'+str(sb+1))
                   DMs = np.append(DMs,dm)
         
+        rows=1
+        cols=1
+        fig = plt.figure(figsize=(10, 10))
+        gs = gridspec.GridSpec(rows, cols)
         
+        if answer == 'n':
+            total_expected = answer_sub
+        if answer == 'y':
+            total_expected = answer_sub+np.sum(vals)
 
+        print("Please click where each burst(s) sub-burst is.")
+        burst_id = identify_bursts(profile,gs,peak_bin,tavg,tsamp)
+        plt.show()
+
+        for i in range(100):
+            if len(burst_id.peak_times)!=total_expected:
+                fig = plt.figure(figsize=(10, 10))
+                gs = gridspec.GridSpec(rows, cols)
+                print("The number of selections did not match the total number of components. Please try again.") 
+                burst_id = identify_bursts(profile,gs,peak_bin,tavg,tsamp)
+                plt.show()
+            if len(burst_id.peak_times)==total_expected:
+                break
+
+        peak_times=np.append(peak_times,burst_id.peak_times)
+        amps=np.append(amps,burst_id.peak_amps)
+       
         os.chdir('..')
 
+
     indices = [np.array([str(x) for x in ind1]),np.array(ind2)]
-    bursts={'DM':DMs}
+    bursts={'DM':DMs, 'Peak Time Guess':peak_times, 'Amp Guess':amps}
     df = pd.DataFrame(data=bursts,index=indices)
     print(df)
     df.to_hdf('%s_burst_properties.hdf5'%BASENAME,'pulses')
