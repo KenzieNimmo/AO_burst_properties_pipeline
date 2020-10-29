@@ -361,7 +361,7 @@ if __name__ == '__main__':
     ind2 = [] # for the sub burst name indices
     peak_times=[]
     amps=[]
-    pulses_arr = [9362]
+    
     for i in range(len(pulses_arr)):
         print("RFI zapping of observation %s, pulse ID %s"%(BASENAME,pulses_arr[i]))
 
