@@ -147,7 +147,7 @@ class offpulse(object):
                 index2=np.int(x2)
                 self.end_times.append(index2)
                 y_range = self.profile.max() - self.profile.min()
-                ymin=self.profile.min()-y_range*0.1
+                ymin=self.profile.min()
                 if self.begin_times[-1] < index2:
                     self.lines['burst'] = self.axes.hlines(y=ymin, xmin=self.begin_times[-1], xmax=index2, lw=10, color='#FF00FF',zorder=0.8)
                 else:
