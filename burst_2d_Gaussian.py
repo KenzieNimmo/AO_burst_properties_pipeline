@@ -64,9 +64,9 @@ def fit_Gauss2D_model(data, tdum, fdum, g_guess):
     fit_LM = fitting.LevMarLSQFitter()
     fit_2dG = fit_LM(g_guess, xdum, ydum, data)
 
-    return fit_2dG
+    return fit_2dG, fit_LM
 
-def report_Gauss_parameters(best_gauss, verbose=False):
+def report_Gauss_parameters(best_gauss, fitter, verbose=False):
     '''
     Simple function to extract and report best fit parameters of Gaussian model
 
@@ -77,27 +77,29 @@ def report_Gauss_parameters(best_gauss, verbose=False):
     Return
     bparams = array of Gaussian parameters (dimension: npeaks x 6 parameters)
     '''
-    #Calc number of sub-bursts
     npks = len(best_gauss.parameters)/6
     npks = int(npks)
-
-    #Get parameters from best-fit astropy model object
     bparams = best_gauss.parameters.reshape((npks,6))
 
-    #If requested, loop over parameters and print
+    #Pull out uncertainties
+    cov_mat=fitter.fit_info['param_cov']
+    bunc=np.sqrt(np.diag(cov_mat))
+    print(bunc)
+    bunc.shape=((npks,6))
+
     if verbose:
         for ii in range(npks):
 
             print("**** Sub-burst %d ****" % ii)
-            print("Amp  : %.2f" % bparams[ii, 0])
-            print("T Loc: %.2f" % bparams[ii, 1])
-            print("F Loc: %.2f" % bparams[ii, 2])
-            print("T Wid: %.2f" % bparams[ii, 3])
-            print("F Wid: %.2f" % bparams[ii, 4])
-            print("Angle: %.2f" % bparams[ii, 5])
+            print("Amp  : %.2f +/- %.2f" % (bparams[ii, 0], bunc[ii,0]))
+            print("T Loc: %.2f +/- %.2f" % (bparams[ii, 1], bunc[ii,1]))
+            print("F Loc: %.2f +/- %.2f" % (bparams[ii, 2], bunc[ii,2]))
+            print("T Wid: %.2f +/- %.2f" % (bparams[ii, 3], bunc[ii,3]))
+            print("F Wid: %.2f +/- %.2f" % (bparams[ii, 4], bunc[ii,4]))
+            print("Angle: %.2f +/- %.2f" % (bparams[ii, 5], bunc[ii,5]))
             print("")
 
-    return bparams
+    return bparams, bunc
 
 def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), title=''):
     '''Method to produce the three panel
