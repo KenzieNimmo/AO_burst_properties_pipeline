@@ -76,9 +76,15 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
     bparams = best_gauss.parameters.reshape((npks,6))
 
     #Pull out uncertainties
+<<<<<<< HEAD
     #cov_mat=fitter.fit_info['param_cov']
     #bunc=np.sqrt(np.diag(cov_mat))
     bunc = np.zeros_like(bparams)
+=======
+    cov_mat=fitter.fit_info['param_cov']
+    bunc=np.sqrt(np.diag(cov_mat))
+    print(bunc)
+>>>>>>> ab818cdd17aa416aeaed0b3e93c5c36dcf917a20
     bunc.shape=((npks,6))
 
     if verbose:
