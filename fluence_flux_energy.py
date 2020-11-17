@@ -23,7 +23,7 @@ def radiometer(tsamp, bw, npol, SEFD):
     Tsys is the system temperature in K (typical value for Effelsberg = 20K)
     G is the telescope gain in K/Jy (typical value for Effelsberg = 1.54K/Jy)
     """
-
+    
     return (SEFD)*(1/np.sqrt((bw*1.e6)*npol*tsamp*1e-3))
 
 
@@ -49,7 +49,11 @@ y eye)
         offtimes=pickle.load(f)
 
     f.close()
-    #offtimes=offtimes[offtimes<2400]
+
+    totalbins=arr.shape[1] #number of bins
+    offtimes = offtimes[np.where(offtimes<totalbins)[0]]
+    
+    print(offtimes)
     t_cent=t_cent/tsamp #in bins
     width = width/tsamp #in bins
 
@@ -81,7 +85,7 @@ y eye)
     plt.plot(profile,'k')
     plt.axvline((t_cent-width),color='r')
     plt.axvline((t_cent+width),color='r')
-    plt.xlim((t_cent-100/tsamp,t_cent+100/tsamp))
+    
     plt.xlabel('Time bins')
     plt.ylabel('S/N')
     plt.savefig('burst_profile.pdf',format='pdf')
@@ -149,7 +153,7 @@ utput from fit_burst_fb.py.")
     orig_in_hdf5_file='../%s.hdf5'%BASENAME
     in_hdf5_file='%s_burst_properties.hdf5'%BASENAME
     out_hdf5_file=in_hdf5_file
-
+    
     smooth=7 #smoothing value used for bandpass calibration
 
     pulses=open('%s'%PULSES_TXT)
@@ -170,6 +174,7 @@ utput from fit_burst_fb.py.")
     Distances=[]
     SNRPeaks=[]
 
+    pulses_arr=['9362']
     for i in range(len(pulses_arr)):
         print("Fluence/Peak Flux Density of observation %s, pulse ID %s"%(BASENAME,pulses_arr[i]))
         os.chdir('%s'%pulses_arr[i])
@@ -190,8 +195,8 @@ utput from fit_burst_fb.py.")
         bw=np.abs(freqs[-1]-freqs[0])+fres
 
         pulses = pd.read_hdf('../'+in_hdf5_file, 'pulses')
-        t_cent = pulses.loc[pulses_arr[i],'t_cent']
-        t_fwhm = pulses.loc[pulses_arr[i],'t_width']
+        t_cent = pulses.loc[pulses_arr[i],'t_cent [s]']
+        t_fwhm = pulses.loc[pulses_arr[i],'t_width [s]']
         dm=pulses.loc[pulses_arr[i],'DM']
 
         waterfall,t,peak_bin=import_fil_fits.fits_to_np(filename,dm=dm,maskfile=maskfile,bandpass=True,offpulse=offpulsefile,AO=True,smooth_val=smooth,hdf5=orig_in_hdf5_file,index=pulses_arr[i])

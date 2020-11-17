@@ -11,7 +11,7 @@
 import numpy as np
 import matplotlib.pyplot as py
 
-import psrchive_utils as pau
+import psr_utils as pau
 
 from astropy.modeling import models, fitting
 from astropy.convolution import Gaussian1DKernel, Box1DKernel, convolve
@@ -23,16 +23,13 @@ def gen_Gauss2D_model(peak_bins, peak_amps, f0=1600., bw=200., dt=2.0 ):
     Generates a 2D Gaussian astropy model for LSQ fitting.
     The number of Gaussians included in the model is infered from the length of peak_bins.
     The input parameters give the initial guesses for the LSQ fitting.
-
     Note: the units of the time and frequency data can be sec and MHz or time bins and channels
-
     Function parameters:
     peak_bins = list of peak bins or times to give as an initial guess
     peak_amps = list of peak amplitudes to give as an initial guess
     f0 = center frequeny for initial guess
     bw = bandwidth for initial guess
     dt = burst duration for initial guess
-
     Returns:
     astropy 2D Gaussian model object
     '''
@@ -42,7 +39,7 @@ def gen_Gauss2D_model(peak_bins, peak_amps, f0=1600., bw=200., dt=2.0 ):
     for ii in range(npeaks):
         if ii == 0: g_guess = models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0, \
                                             x_stddev=dt, y_stddev=bw, theta=0.0)
-        else: g_guess += models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0, \
+    else: g_guess += models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0, \
                                             x_stddev=dt, y_stddev=bw, theta=0.0)
     return g_guess
 
@@ -50,7 +47,6 @@ def fit_Gauss2D_model(data, tdum, fdum, g_guess):
     '''
     Fits the 2D data provided to the astropy 2D Gaussian model object
       using the LM least squares routine
-
     Function parameters:
     data = 2D data of burst (format is freq. x time)
     tdum = dummy array along time dimension for LSQ fitting (can be seconds or bins).
@@ -64,40 +60,40 @@ def fit_Gauss2D_model(data, tdum, fdum, g_guess):
     fit_LM = fitting.LevMarLSQFitter()
     fit_2dG = fit_LM(g_guess, xdum, ydum, data)
 
-    return fit_2dG
+    return fit_2dG, fit_LM
 
-def report_Gauss_parameters(best_gauss, verbose=False):
+def report_Gauss_parameters(best_gauss, fitter, verbose=False):
     '''
     Simple function to extract and report best fit parameters of Gaussian model
-
     Input:
     best_gauss = 2D Gaussian astropy modeling object
     verbose = option to print paramters to screen (default False)
-
     Return
     bparams = array of Gaussian parameters (dimension: npeaks x 6 parameters)
     '''
-    #Calc number of sub-bursts
     npks = len(best_gauss.parameters)/6
     npks = int(npks)
-
-    #Get parameters from best-fit astropy model object
     bparams = best_gauss.parameters.reshape((npks,6))
 
-    #If requested, loop over parameters and print
+    #Pull out uncertainties
+    #cov_mat=fitter.fit_info['param_cov']
+    #bunc=np.sqrt(np.diag(cov_mat))
+    bunc = np.zeros_like(bparams)
+    bunc.shape=((npks,6))
+
     if verbose:
         for ii in range(npks):
 
             print("**** Sub-burst %d ****" % ii)
-            print("Amp  : %.2f" % bparams[ii, 0])
-            print("T Loc: %.2f" % bparams[ii, 1])
-            print("F Loc: %.2f" % bparams[ii, 2])
-            print("T Wid: %.2f" % bparams[ii, 3])
-            print("F Wid: %.2f" % bparams[ii, 4])
-            print("Angle: %.2f" % bparams[ii, 5])
+            print("Amp  : %.2f +/- %.2f" % (bparams[ii, 0], bunc[ii,0]))
+            print("T Loc: %.2f +/- %.2f" % (bparams[ii, 1], bunc[ii,1]))
+            print("F Loc: %.2f +/- %.2f" % (bparams[ii, 2], bunc[ii,2]))
+            print("T Wid: %.2f +/- %.2f" % (bparams[ii, 3], bunc[ii,3]))
+            print("F Wid: %.2f +/- %.2f" % (bparams[ii, 4], bunc[ii,4]))
+            print("Angle: %.2f +/- %.2f" % (bparams[ii, 5], bunc[ii,5]))
             print("")
 
-    return bparams
+    return bparams, bunc
 
 def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), title=''):
     '''Method to produce the three panel
@@ -173,7 +169,6 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
 def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=False):
     '''Generates the usual dynamic spectrum plot using dynspec_3pan
     with the contours from the best-fit 2D Gaussian model overplotted
-
     Input parameters:
     stimes = dummy array for the time dimension
     freqs = dummy array for the freq dimension
@@ -181,7 +176,6 @@ def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=Fal
     best_gauss = astropy fitting object containing the best-fit LSQ fitted parameters
     ncontour = number of contour lines to plot (default 8)
     res_plot = if True, a residual plot will also be made (default False)
-
     '''
     T,F=np.meshgrid(stimes, freqs)
 
@@ -191,9 +185,11 @@ def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=Fal
     #Add contours
     ax=fig.get_axes()
     ax[0].contour(T,F,best_gauss(T,F), ncontour, colors='w')
+    py.show()
 
     #If requested, make the residual dynamic spectrum plot
     if res_plot:
         res_fig=dynspec_3pan(stimes, freqs, data-best_gauss(T,F))
+        py.show()
 
     return

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import psrfits_pipe as psrfits
 from astropy.io import fits as astrofits
 import pandas as pd
+import sys 
 
 def filterbank_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None):
     """
@@ -40,7 +41,7 @@ def filterbank_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=
         arr=bp(filename,maskfile,nbins,offpulse,smooth_val=smooth_val)
     return arr
 
-def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,smooth_val=None,AO=False,hdf5=None,index=None):
+def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,smooth_val=None,AO=False,hdf5=None,index=None,plot=False,tavg=1):
     """
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
@@ -81,7 +82,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
         else: print("Please provide the hdf5 file containing the burst properties and the burst index from the search pipeline.")
 
         burstt=(burst_time-new_tstart)*24*3600. #time in seconds of burst in cropped fits fileim
-        peak_bin = int(burstt/t_samp)
+        peak_bin = int(burstt/(t_samp))
 
         #begin_bin=0 #number of bins
         #peak_subint=int(np.floor(peak_bin/sample_per_subint))
@@ -108,9 +109,29 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
     if smooth_val==1:
         smooth_val=None
     if bandpass==True and offpulse!=None:
-        arr=bp(arr,maskfile,offpulse,AO=AO,smooth_val=smooth_val)
+        arr=bp(arr,maskfile,offpulse,AO=AO,smooth_val=smooth_val,plot=plot)
     if AO==True:
-        arr = arr[:,peak_bin-int(50e-3/t_samp):peak_bin+int(50e-3/t_samp)]
+        arr = arr[:,peak_bin-int(50e-3/(t_samp)):peak_bin+int(50e-3/(t_samp))]
+        
+        tavg = int(tavg)
+        if tavg>1:
+            nsamples = arr.shape[1]
+            tavg = float(tavg)
+            if (nsamples/tavg)-int(nsamples/tavg)!=0:
+                print("The total number of time bins is %s, please choose an tscrunch value that divides the total number of samples."%nsamples)
+                sys.exit()
+            else:
+                newsamps=nsamples/tavg
+                arr=np.array(np.column_stack([np.mean(subint, axis=1) for subint in np.hsplit(arr,newsamps)]))
+
+            arr=np.flip(arr,0)
+            if maskfile!=None:
+                vmin = np.amin(arr)
+                arr[amask,:]=vmin-100
+                mask = arr<vmin-50
+                arr = np.ma.masked_where(mask==True,arr)
+            arr=np.flip(arr,0)
+
         return arr, new_tstart, int(arr.shape[1]/2.)
     else:
         return arr
@@ -165,16 +186,18 @@ def smooth(x,window_len=11,window='hanning'):
 
 
 
-def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None):
+def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None,plot=False):
     """
     Uses off pulse data (identified using interactive RFI_zapper.py) to normalise the spectrum and
     calibrate the bandpass
     """
-    if smooth_val % 2 ==0:
-        print("Please give an ODD smoothing value (2n+1) for the bandpass calibration")
-        sys.exit()
+    if smooth_val!=None:
+        if smooth_val % 2 ==0:
+            print("Please give an ODD smoothing value (2n+1) for the bandpass calibration")
+            sys.exit()
 
     offpulse=pickle.load(open(offpulsefile,'rb'))
+    offpulse=[int(x) for x in offpulse]
     spec = np.mean(arr[:,offpulse],axis=1)
     unsmoothed_spec = spec.copy()
     # smooth the bandpass spectrum
@@ -202,14 +225,15 @@ def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None):
     arr2-=np.mean(arr2)
 
     #diagnostic plots
-    fig,axes=plt.subplots(2,figsize=[8,8],sharex=True)
-    axes[0].plot(unsmoothed_spec,'k',label='unsmoothed spectrum')
-    axes[0].plot(spec,'r',label='smoothed spectrum')
-    axes[0].legend()
+    if plot==True:
+        fig,axes=plt.subplots(2,figsize=[8,8],sharex=True)
+        axes[0].plot(unsmoothed_spec,'k',label='unsmoothed spectrum')
+        axes[0].plot(spec,'r',label='smoothed spectrum')
+        axes[0].legend()
 
-    axes[1].plot(np.mean(arr2,axis=1),'r',label='bandpass corrected')
-    axes[1].set_xlabel('Frequency')
-    axes[1].legend()
-    plt.savefig('bandpass_diagnostic.pdf',format='pdf')
-    plt.show()
+        axes[1].plot(np.mean(arr2,axis=1),'r',label='bandpass corrected')
+        axes[1].set_xlabel('Frequency')
+        axes[1].legend()
+        plt.savefig('bandpass_diagnostic.pdf',format='pdf')
+        plt.show()
     return arr2

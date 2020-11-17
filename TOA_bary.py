@@ -69,6 +69,7 @@ if __name__ == '__main__':
 
     PULSES_TXT = 'pulse_nos.txt'
     in_hdf5_file='%s_burst_properties.hdf5'%BASENAME
+    
     out_hdf5_file=in_hdf5_file
 
     pulses=open('%s'%PULSES_TXT)
@@ -82,7 +83,7 @@ if __name__ == '__main__':
 
 
     toas = []
-
+    pulses_arr=[8898]
     for i in range(len(pulses_arr)):
         print("Finding the time of arrival (barycentre corrected) of observation %s, pulse ID %s"%(BASENAME,pulses_arr[i]))
         os.chdir('%s'%pulses_arr[i])
