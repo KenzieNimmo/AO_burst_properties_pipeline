@@ -2,15 +2,17 @@
 Makes an array (masked or not) from a filterbank or fits file. Also applies bandpass correction using an offpulse region.
 """
 
-import fb_pipe as filterbank
+#import fb_pipe as filterbank
+from presto import filterbank
 import numpy as np
 import pickle
-from scipy.interpolate import interp1d as interp
+#from scipy.interpolate import interp1d as interp
 import matplotlib.pyplot as plt
-import psrfits_pipe as psrfits
+#import psrfits_pipe as psrfits
+from presto import psrfits
 from astropy.io import fits as astrofits
 import pandas as pd
-import sys 
+import sys
 
 def filterbank_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None):
     """
@@ -27,7 +29,7 @@ def filterbank_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=
     spec=fil.get_spectra(0,total_N)
     if dm!=None:
         spec.dedisperse(dm, padval='mean')
-    arr = np.array([spec[i] for i in xrange(fil.header['nchans'])])
+    arr = np.array([spec[i] for i in range(fil.header['nchans'])])
     t_samp = fil.header['tsamp']
     if maskfile!=None:
         amaskfile = pickle.load(open(maskfile,'rb'))
@@ -41,7 +43,8 @@ def filterbank_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=
         arr=bp(filename,maskfile,nbins,offpulse,smooth_val=smooth_val)
     return arr
 
-def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,smooth_val=None,AO=False,hdf5=None,index=None,plot=False,tavg=1):
+def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None,
+               AO=False, hdf5=None, index=None, plot=False, tavg=1):
     """
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
@@ -54,7 +57,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
     If AO==True give the hdf5 file containing the burst information to use.
     """
     fits=psrfits.PsrfitsFile(filename)
-    total_N=fits.specinfo.N
+    total_N = int(fits.specinfo.N)
     t_samp=fits.specinfo.dt
     npoln = fits.npoln
     imjd,fmjd=psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
@@ -75,11 +78,14 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
             pulses=pulses.loc[pulses['Pulse'] == 0]
             burst_time=pulses.loc[index,'Time']/(24*3600.)+tstart #MJD
 
-            #NB: There is an offset between the burst peak time determined above and the burst by ~4.5ms. 
+            #NB: There is an offset between the burst peak time determined above and the burst by ~4.5ms.
             # I think this is a dedispersion artefact but not sure. At the moment hard-coding a shift
-            burst_time-=(4.5e-3/(24*3600.)) #MJD
+            #burst_time-=(4.5e-3/(24*3600.)) #MJD
+            # I think the new presto version does this correctly.
 
-        else: print("Please provide the hdf5 file containing the burst properties and the burst index from the search pipeline.")
+        else:
+            print("Please provide the hdf5 file containing the burst properties and the burst \
+                  index from the search pipeline.")
 
         burstt=(burst_time-new_tstart)*24*3600. #time in seconds of burst in cropped fits fileim
         peak_bin = int(burstt/(t_samp))
@@ -88,15 +94,15 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
         #peak_subint=int(np.floor(peak_bin/sample_per_subint))
         #end_bin=int(peak_subint+6.)*sample_per_subint
 
-        spec=fits.get_spectra(0,total_N)
+        spec=fits.get_spectra(0, total_N-1)
 
-    else: spec=fits.get_spectra(0,total_N)
+    else: spec=fits.get_spectra(0, total_N-1)
 
     if dm!=None:
-        spec.dedisperse(dm, padval='mean',trim=True)
+        spec.dedisperse(dm, padval='mean') #,trim=True
 
 
-    arr = np.array([spec[i] for i in xrange(fits.specinfo.num_channels)])
+    arr = np.array([spec[i] for i in range(fits.specinfo.num_channels)])
 
     if maskfile!=None:
         amaskfile = pickle.load(open(maskfile,'rb'))
@@ -112,7 +118,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None,s
         arr=bp(arr,maskfile,offpulse,AO=AO,smooth_val=smooth_val,plot=plot)
     if AO==True:
         arr = arr[:,peak_bin-int(50e-3/(t_samp)):peak_bin+int(50e-3/(t_samp))]
-        
+
         tavg = int(tavg)
         if tavg>1:
             nsamples = arr.shape[1]
@@ -160,10 +166,10 @@ def smooth(x,window_len=11,window='hanning'):
     NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
     """
     if x.ndim != 1:
-        raise ValueError, "smooth only accepts 1 dimension arrays."
+        raise ValueError("smooth only accepts 1 dimension arrays.")
 
     if x.size < window_len:
-        raise ValueError, "Input vector needs to be bigger than window size."
+        raise ValueError("Input vector needs to be bigger than window size.")
 
 
     if window_len<3:
@@ -171,7 +177,7 @@ def smooth(x,window_len=11,window='hanning'):
 
 
     if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError, "Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
+        raise ValueError("Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
 
 
     s=np.r_[x[window_len-1:0:-1],x,x[-2:-window_len-1:-1]]
