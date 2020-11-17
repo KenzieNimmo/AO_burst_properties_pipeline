@@ -1,5 +1,6 @@
 """
-Makes an array (masked or not) from a filterbank or fits file. Also applies bandpass correction using an offpulse region.
+Makes an array (masked or not) from a filterbank or fits file. Also applies bandpass correction
+using an offpulse region.
 """
 
 #import fb_pipe as filterbank
@@ -14,34 +15,37 @@ from astropy.io import fits as astrofits
 import pandas as pd
 import sys
 
-def filterbank_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None):
+
+def filterbank_to_np(filename, dm=None, maskfile=None,
+                     bandpass=False, offpulse=None, smooth_val=None):
     """
     Read filterbank file and output a numpy array of the data
     To dedisperse, give a dm value.
     To mask, give a maskfile (a pkl file containing the channels to mask)
-    To bandpass correct, bandpass=True, give offpulse file (a pkl file containing the offpulse time bins)
-    and give smooth_val (an integer) to define how much smoothing the bandpass should have (None for no smoothing).
+    To bandpass correct, bandpass=True, give offpulse file (a pkl file containing the
+    offpulse time bins) and give smooth_val (an integer) to define how much smoothing
+    the bandpass should have (None for no smoothing).
     """
-
 
     fil = filterbank.filterbank(filename)
     total_N = fil.number_of_samples
-    spec=fil.get_spectra(0,total_N)
-    if dm!=None:
+    spec = fil.get_spectra(0, total_N)
+    if dm is not None:
         spec.dedisperse(dm, padval='mean')
     arr = np.array([spec[i] for i in range(fil.header['nchans'])])
     t_samp = fil.header['tsamp']
-    if maskfile!=None:
-        amaskfile = pickle.load(open(maskfile,'rb'))
-        amask=[int(i) for i in amaskfile]
+    if maskfile is not None:
+        amaskfile = pickle.load(open(maskfile, 'rb'))
+        amask = [int(i) for i in amaskfile]
         vmin = np.amin(arr)
-        arr[amask,:]=vmin-100
-        mask = arr<vmin-50
-        arr = np.ma.masked_where(mask==True,arr)
-    arr=np.flip(arr,0)
-    if bandpass==True and offpulse!=None:
-        arr=bp(filename,maskfile,nbins,offpulse,smooth_val=smooth_val)
+        arr[amask, :] = vmin - 100
+        mask = arr < vmin - 50
+        arr = np.ma.masked_where(mask, arr)
+    arr = np.flip(arr, 0)
+    if bandpass is True and offpulse is not None:
+        arr = bp(filename, maskfile, nbins, offpulse, smooth_val=smooth_val)
     return arr
+
 
 def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None,
                AO=False, hdf5=None, index=None, plot=False, tavg=1):
@@ -49,100 +53,108 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
     To mask, give a maskfile (a pkl file containing the channels to mask)
-    To bandpass correct, bandpass=True, give offpulse file (a pkl file containing the offpulse time bins)
-    and give smooth_val (an integer) to define how much smoothing the bandpass should have (None for no smoothing).
+    To bandpass correct, bandpass=True, give offpulse file (a pkl file
+    containing the offpulse time bins) and give smooth_val (an integer) to
+    define how much smoothing the bandpass should have (None for no smoothing).
 
-    For AO FRB 121102 analysis, AO=True. AO chopped fits files contain two subints before the burst and 8 after,
-    so we use this to chop out a smaller chunk of data around the burst for processing (also to ensure each burst is processed consistently).
+    For AO FRB 121102 analysis, AO=True. AO chopped fits files contain two
+    subints before the burst and 8 after, so we use this to chop out a smaller
+    chunk of data around the burst for processing (also to ensure each burst
+    is processed consistently).
     If AO==True give the hdf5 file containing the burst information to use.
     """
-    fits=psrfits.PsrfitsFile(filename)
+    fits = psrfits.PsrfitsFile(filename)
     total_N = int(fits.specinfo.N)
-    t_samp=fits.specinfo.dt
+    t_samp = fits.specinfo.dt
     npoln = fits.npoln
-    imjd,fmjd=psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
-    tstart=imjd+fmjd
-    if AO==True:
-        fits_file=astrofits.open(filename,memmap=True)
-        subint_hdu=fits_file[1]
-        subint_hdr=subint_hdu.header
-        begin_subint=subint_hdr['NSUBOFFS']
-        sample_per_subint=subint_hdr['NSBLK']
-        time_from_orig_begin_time=(begin_subint*sample_per_subint*t_samp)/(24*3600.) #MJD
-        new_tstart=tstart+time_from_orig_begin_time
+    imjd, fmjd = psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
+    tstart = imjd + fmjd
+    if AO is True:
+        fits_file = astrofits.open(filename, memmap=True)
+        subint_hdu = fits_file[1]
+        subint_hdr = subint_hdu.header
+        begin_subint = subint_hdr['NSUBOFFS']
+        sample_per_subint = subint_hdr['NSBLK']
+        time_from_orig_begin_time = (
+            begin_subint * sample_per_subint * t_samp) / (24 * 3600.)  # MJD
+        new_tstart = tstart + time_from_orig_begin_time
 
-        if hdf5!=None and index!=None:
+        if hdf5 is not None and index is not None:
             hdf5_file = hdf5
             index = int(index)
             pulses = pd.read_hdf(hdf5_file, 'pulses')
-            pulses=pulses.loc[pulses['Pulse'] == 0]
-            burst_time=pulses.loc[index,'Time']/(24*3600.)+tstart #MJD
+            pulses = pulses.loc[pulses['Pulse'] == 0]
+            burst_time = pulses.loc[index, 'Time'] / (24 * 3600.) + tstart  # MJD
 
-            #NB: There is an offset between the burst peak time determined above and the burst by ~4.5ms.
+            # NB: There is an offset between the burst peak time determined above and the burst by ~4.5ms.
             # I think this is a dedispersion artefact but not sure. At the moment hard-coding a shift
-            #burst_time-=(4.5e-3/(24*3600.)) #MJD
+            # burst_time-=(4.5e-3/(24*3600.)) #MJD
             # I think the new presto version does this correctly.
 
         else:
             print("Please provide the hdf5 file containing the burst properties and the burst \
                   index from the search pipeline.")
 
-        burstt=(burst_time-new_tstart)*24*3600. #time in seconds of burst in cropped fits fileim
-        peak_bin = int(burstt/(t_samp))
+        burstt = (burst_time - new_tstart) * 24 * \
+            3600.  # time in seconds of burst in cropped fits fileim
+        peak_bin = int(burstt / (t_samp))
 
-        #begin_bin=0 #number of bins
-        #peak_subint=int(np.floor(peak_bin/sample_per_subint))
-        #end_bin=int(peak_subint+6.)*sample_per_subint
+        # begin_bin=0 #number of bins
+        # peak_subint=int(np.floor(peak_bin/sample_per_subint))
+        # end_bin=int(peak_subint+6.)*sample_per_subint
 
-        spec=fits.get_spectra(0, total_N-1)
+        spec = fits.get_spectra(0, total_N - 1)
 
-    else: spec=fits.get_spectra(0, total_N-1)
+    else:
+        spec = fits.get_spectra(0, total_N - 1)
 
-    if dm!=None:
-        spec.dedisperse(dm, padval='mean') #,trim=True
-
+    if dm is not None:
+        spec.dedisperse(dm, padval='mean')  # ,trim=True
 
     arr = np.array([spec[i] for i in range(fits.specinfo.num_channels)])
 
-    if maskfile!=None:
-        amaskfile = pickle.load(open(maskfile,'rb'))
-        amask=[int(i) for i in amaskfile]
+    if maskfile is not None:
+        amaskfile = pickle.load(open(maskfile, 'rb'))
+        amask = [int(i) for i in amaskfile]
         vmin = np.amin(arr)
-        arr[amask,:]=vmin-100
-        mask = arr<vmin-50
-        arr = np.ma.masked_where(mask==True,arr)
-    arr=np.flip(arr,0)
-    if smooth_val==1:
-        smooth_val=None
-    if bandpass==True and offpulse!=None:
-        arr=bp(arr,maskfile,offpulse,AO=AO,smooth_val=smooth_val,plot=plot)
-    if AO==True:
-        arr = arr[:,peak_bin-int(50e-3/(t_samp)):peak_bin+int(50e-3/(t_samp))]
+        arr[amask, :] = vmin - 100
+        mask = arr < vmin - 50
+        arr = np.ma.masked_where(mask, arr)
+    arr = np.flip(arr, 0)
+    if smooth_val == 1:
+        smooth_val = None
+    if bandpass is True and offpulse is not None:
+        arr = bp(arr, maskfile, offpulse, AO=AO, smooth_val=smooth_val, plot=plot)
+    if AO is True:
+        arr = arr[:, peak_bin - int(50e-3 / (t_samp)):peak_bin + int(50e-3 / (t_samp))]
 
         tavg = int(tavg)
-        if tavg>1:
+        if tavg > 1:
             nsamples = arr.shape[1]
             tavg = float(tavg)
-            if (nsamples/tavg)-int(nsamples/tavg)!=0:
-                print("The total number of time bins is %s, please choose an tscrunch value that divides the total number of samples."%nsamples)
+            if (nsamples / tavg) - int(nsamples / tavg) != 0:
+                print(f"The total number of time bins is {nsamples}, please choose an tscrunch "
+                      "value that divides the total number of samples.")
                 sys.exit()
             else:
-                newsamps=nsamples/tavg
-                arr=np.array(np.column_stack([np.mean(subint, axis=1) for subint in np.hsplit(arr,newsamps)]))
+                newsamps = nsamples / tavg
+                arr = np.array(np.column_stack([np.mean(subint, axis=1)
+                                                for subint in np.hsplit(arr, newsamps)]))
 
-            arr=np.flip(arr,0)
-            if maskfile!=None:
+            arr = np.flip(arr, 0)
+            if maskfile is not None:
                 vmin = np.amin(arr)
-                arr[amask,:]=vmin-100
-                mask = arr<vmin-50
-                arr = np.ma.masked_where(mask==True,arr)
-            arr=np.flip(arr,0)
+                arr[amask, :] = vmin - 100
+                mask = arr < vmin - 50
+                arr = np.ma.masked_where(mask, arr)
+            arr = np.flip(arr, 0)
 
-        return arr, new_tstart, int(arr.shape[1]/2.)
+        return arr, new_tstart, int(arr.shape[1] / 2.)
     else:
         return arr
 
-def smooth(x,window_len=11,window='hanning'):
+
+def smooth(x, window_len=11, window='hanning'):
     """smooth the data using a window with requested size.
     This method is based on the convolution of a scaled window with the signal.
     The signal is prepared by introducing reflected copies of the signal
@@ -163,7 +175,8 @@ def smooth(x,window_len=11,window='hanning'):
     numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
     scipy.signal.lfilter
     TODO: the window parameter could be the window itself if an array instead of a string
-    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    NOTE: length(output) != length(input), to correct this: return
+    y[(window_len/2-1):-(window_len/2)] instead of just y.
     """
     if x.ndim != 1:
         raise ValueError("smooth only accepts 1 dimension arrays.")
@@ -171,75 +184,71 @@ def smooth(x,window_len=11,window='hanning'):
     if x.size < window_len:
         raise ValueError("Input vector needs to be bigger than window size.")
 
-
-    if window_len<3:
+    if window_len < 3:
         return x
 
-
-    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+    if window not in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
         raise ValueError("Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
 
-
-    s=np.r_[x[window_len-1:0:-1],x,x[-2:-window_len-1:-1]]
-    #print(len(s))
-    if window == 'flat': #moving average
-        w=np.ones(window_len,'d')
+    s = np.r_[x[window_len - 1:0:-1], x, x[-2:-window_len - 1:-1]]
+    # print(len(s))
+    if window == 'flat':  # moving average
+        w = np.ones(window_len, 'd')
     else:
-        w=eval('np.'+window+'(window_len)')
+        w = eval('np.' + window + '(window_len)')
 
-    y=np.convolve(w/w.sum(),s,mode='valid')
+    y = np.convolve(w / w.sum(), s, mode='valid')
     return y
 
 
-
-def bp(arr,maskfile,offpulsefile,AO=False,smooth_val=None,plot=False):
+def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
     """
     Uses off pulse data (identified using interactive RFI_zapper.py) to normalise the spectrum and
     calibrate the bandpass
     """
-    if smooth_val!=None:
-        if smooth_val % 2 ==0:
+    if smooth_val is not None:
+        if smooth_val % 2 == 0:
             print("Please give an ODD smoothing value (2n+1) for the bandpass calibration")
             sys.exit()
 
-    offpulse=pickle.load(open(offpulsefile,'rb'))
-    offpulse=[int(x) for x in offpulse]
-    spec = np.mean(arr[:,offpulse],axis=1)
+    offpulse = pickle.load(open(offpulsefile, 'rb'))
+    offpulse = [int(x) for x in offpulse]
+    spec = np.mean(arr[:, offpulse], axis=1)
     unsmoothed_spec = spec.copy()
     # smooth the bandpass spectrum
-    speclen=len(spec)
+    speclen = len(spec)
 
-    mask=np.zeros_like(spec)
-    if maskfile!=None:
-        amaskfile = pickle.load(open(maskfile,'rb'))
-        amask=[speclen-int(i)-1 for i in amaskfile]
-        mask[amask]=1
-    if smooth_val!=None:
+    mask = np.zeros_like(spec)
+    if maskfile is not None:
+        amaskfile = pickle.load(open(maskfile, 'rb'))
+        amask = [speclen - int(i) - 1 for i in amaskfile]
+        mask[amask] = 1
+    if smooth_val is not None:
         print("Caution: smoothing is not currently implemented.")
         print("Not smoothing the bandpass")
-        a = int((smooth_val-1)/2.)
+        a = int((smooth_val - 1) / 2.)
         #spec = np.ma.masked_where(mask==True,spec)
         #spec = smooth(spec,window_len=smooth_val)[a-1:-(a+1)]
         #spec = np.ma.masked_where(mask==True,spec)
 
-    arr2=arr.copy()
+    arr2 = arr.copy()
 
     for i in range(arr.shape[1]):
-        arr2[:,i]/=spec
-        #arr[:,i]/=maskfit
+        arr2[:, i] /= spec
+        # arr[:,i]/=maskfit
 
-    arr2-=np.mean(arr2)
+    arr2 -= np.mean(arr2)
 
-    #diagnostic plots
-    if plot==True:
-        fig,axes=plt.subplots(2,figsize=[8,8],sharex=True)
-        axes[0].plot(unsmoothed_spec,'k',label='unsmoothed spectrum')
-        axes[0].plot(spec,'r',label='smoothed spectrum')
+    # diagnostic plots
+    if plot is True:
+        fig, axes = plt.subplots(2, figsize=[8, 8], sharex=True)
+        axes[0].plot(unsmoothed_spec, 'k', label='unsmoothed spectrum')
+        axes[0].plot(spec, 'r', label='smoothed spectrum')
         axes[0].legend()
 
-        axes[1].plot(np.mean(arr2,axis=1),'r',label='bandpass corrected')
+        axes[1].plot(np.mean(arr2, axis=1), 'r', label='bandpass corrected')
         axes[1].set_xlabel('Frequency')
         axes[1].legend()
-        plt.savefig('bandpass_diagnostic.pdf',format='pdf')
+        plt.savefig('bandpass_diagnostic.pdf', format='pdf')
         plt.show()
     return arr2
