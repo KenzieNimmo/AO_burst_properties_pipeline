@@ -81,8 +81,11 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
 
         if hdf5 is not None and index is not None:
             hdf5_file = hdf5
+            if isinstance(hdf5_file, pd.DataFrame):
+                pulses = hdf5_file
+            else:
+                pulses = pd.read_hdf(hdf5_file, 'pulses')
             index = int(index)
-            pulses = pd.read_hdf(hdf5_file, 'pulses')
             pulses = pulses.loc[pulses['Pulse'] == 0]
             burst_time = pulses.loc[index, 'Time'] / (24 * 3600.) + tstart  # MJD
 

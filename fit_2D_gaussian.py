@@ -5,7 +5,7 @@ Laura Spitler
 import sys
 import numpy as np
 import numpy.random as random
-import matplotlib.pyplot as py
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 def TwoD_Gaussian((x,y), A, x0, y0, sx, sy, B):
@@ -56,11 +56,11 @@ def plot_2D_Gaussian_fit(data, popt, ncontour=8):
 
     fitted_data=TwoD_Gaussian((cc,rr), *popt)
 
-    py.figure()
-    ax=py.subplot(111)
+    plt.figure()
+    ax=plt.subplot(111)
     ax.imshow(data, origin='lower', interpolation='nearest')
     ax.contour(cc,rr,fitted_data.reshape(ydim,xdim), ncontour, colors='w')
-    py.show()
+    plt.show()
 
     return ax
 
@@ -90,9 +90,9 @@ def plot_1D_Gaussian_fit(data, popt, tres=1, xdum=None):
     if xdum == None:
         xdum=np.arange(data.shape[0])
 
-    py.figure()
-    py.plot(tres*xdum, data[xdum], 'b-')
-    py.plot(tres*xdum, OneD_Gaussian(xdum, *popt), 'r-')
-    py.show()
+    plt.figure()
+    plt.plot(tres*xdum, data[xdum], 'b-')
+    plt.plot(tres*xdum, OneD_Gaussian(xdum, *popt), 'r-')
+    plt.show()
 
     return

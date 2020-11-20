@@ -3,7 +3,7 @@
 #
 # ** Change log **
 # - 30 Oct 2020
-# Consolidated model generating and fitting functions. 
+# Consolidated model generating and fitting functions.
 # Added doc strings and comments.
 # Added new function to report parameter values.
 #####
@@ -11,10 +11,10 @@
 import numpy as np
 import matplotlib.pyplot as py
 
-import psr_utils as pau
+#import psr_utils as pau
 
 from astropy.modeling import models, fitting
-from astropy.convolution import Gaussian1DKernel, Box1DKernel, convolve
+#from astropy.convolution import Gaussian1DKernel, Box1DKernel, convolve
 
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
 
@@ -53,9 +53,9 @@ def fit_Gauss2D_model(data, tdum, fdum, g_guess):
         It should have the same length as axis=1 of data.
     fdum = dummy array along the frequency dimension for LSQ fitting (can be Hz or chan. num)
         It should have the same length as axis=0 of data.
-    
+
     '''
-    xdum,ydum = np.meshgrid(tdum,fdum)
+    xdum, ydum = np.meshgrid(tdum, fdum)
 
     fit_LM = fitting.LevMarLSQFitter()
     fit_2dG = fit_LM(g_guess, xdum, ydum, data)
@@ -76,15 +76,15 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
     bparams = best_gauss.parameters.reshape((npks,6))
 
     #Pull out uncertainties
-<<<<<<< HEAD
+#<<<<<<< HEAD
     #cov_mat=fitter.fit_info['param_cov']
     #bunc=np.sqrt(np.diag(cov_mat))
     bunc = np.zeros_like(bparams)
-=======
+#=======
     cov_mat=fitter.fit_info['param_cov']
     bunc=np.sqrt(np.diag(cov_mat))
     print(bunc)
->>>>>>> ab818cdd17aa416aeaed0b3e93c5c36dcf917a20
+#>>>>>>> ab818cdd17aa416aeaed0b3e93c5c36dcf917a20
     bunc.shape=((npks,6))
 
     if verbose:
@@ -104,10 +104,10 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
 def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), title=''):
     '''Method to produce the three panel
     dynamic spectrum plot. The main panel
-    is a pcolormesh figure of data with 
+    is a pcolormesh figure of data with
     the mesh defined by xarr and yarr.
     The bottom panel showes a time series of
-    the 2D data, and the right panel shows 
+    the 2D data, and the right panel shows
     the average bandpass
     Input:
     xarr = 1D array representing xaxis.
@@ -130,7 +130,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
     dstd = np.std(tseries)
     tseries=(tseries-dmedian)/dstd
 
-    #If no plot limits specified, 
+    #If no plot limits specified,
     if vlim==(-1,-1):
         vlim=(np.min(data), np.max(data))
 
