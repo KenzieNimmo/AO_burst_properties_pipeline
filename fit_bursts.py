@@ -18,7 +18,7 @@ if __name__ == '__main__':
     parser.add_option('-t', '--tavg', dest='tavg', type='int', default=1,
                       help="If -t option is used, time averaging is applied using the factor "
                            "given after -t.")
-    parser.add_option('-p', '--pulse', type='int', default=None,
+    parser.add_option('-p', '--pulse', type='str', default=None,
                       help="Give a pulse id to process only this pulse.")
 
     options, args = parser.parse_args()
@@ -44,80 +44,39 @@ if __name__ == '__main__':
     smooth = 7  # smoothing value used for bandpass calibration
 
     pulses = pd.read_hdf(in_hdf5_file, 'pulses')
-    #indices = pulses.index.values.tolist()
-    #bursts, sbs = list(zip(*indices))
-    #bursts = np.array(bursts)
-    #bursts_unique, number_of_sbs = np.unique(bursts, return_counts=True)
 
-    #pulses_arr = list(bursts_unique)
-    # Get pulses whoe have not yet been processed.
-    pulse_ids = pulses.index.get_level_values(0).unique()
-    if 'Gauss Amp' in pulses.columns:
-        not_processed = pulses.loc[(slice(None), ['sb1']), 'Gauss Amp'].isna()
-        pulse_ids = pulse_ids[not_processed]
-
-# =============================================================================
-#     # Add columns if they don't exist.
-#     new_columns = pd.Index(('Gauss Amp', 'Gauss Amp e',
-#                             't_cent / s', 't_cent_e / s',
-#                             't_std / s', 't_std_e / s',
-#                             'f_cent / MHz', 'f_cent_e / MHz',
-#                             'f_std / MHz', 'f_std_e / MHz',
-#                             'f_ref / MHz',
-#                             'Gauss Angle', 'Gauss Angle e'))
-#     new_columns = pulses.columns.append(new_columns).unique()
-#     pulses = pulses.reindex(columns=new_columns)
-# =============================================================================
-
-    t_cent = []
-    t_cent_e = []
-    t_width = []
-    t_width_e = []
-    f_cent = []
-    f_cent_e = []
-    f_width = []
-    f_width_e = []
-    f_ref = []
-    gaus_angle = []
-    amplitudes = []
+    # Get pulses to be processed.
+    if options.pulse is not None:
+        pulse_ids = [options.pulse]
+    else:
+        pulse_ids = pulses.index.get_level_values(0).unique()
+        if 'Gauss Amp' in pulses.columns:
+            not_processed = pulses.loc[(slice(None), ['sb1']), 'Gauss Amp'].isna()
+            pulse_ids = pulse_ids[not_processed]
 
     for pulse_id in pulse_ids:
-        # pulses_arr[i]=str(pulses_arr[i])
         print("2D Gaussian fit of observation %s, pulse ID %s" % (basename, pulse_id))
         os.chdir('%s' % pulse_id)
         filename = '%s_%s.fits' % (basename, pulse_id)
+
+        # Get some observation parameters
         fits = psrfits.PsrfitsFile(filename)
         tsamp = fits.specinfo.dt
         freqs = np.flip(fits.frequencies)
 
         ref_freq = np.max(freqs)
-        f_ref.append(ref_freq)
 
-        # read in mask file
+        # Name mask and offpulse file
         maskfile = '%s_%s_mask.pkl' % (basename, pulse_id)
-        # read in offpulse file
         offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
 
-        # read in DMs
-        #current_burst_id = np.where(bursts == pulse_id)[0]
-        #amp_guesses = []
-        #time_guesses = []
-        #for j in range(len(current_burst_id)):
-        #    amp_guesses = np.append(
-        #        amp_guesses, pulses.loc[indices[current_burst_id[j]], 'Amp Guess'])
-        #    time_guesses = np.append(
-        #        time_guesses, pulses.loc[indices[current_burst_id[j]], 'Peak Time Guess'])
-
-        #amp_guesses = list(amp_guesses)
-        #time_guesses = list(time_guesses)
-        #time_guesses = np.array(time_guesses)
+        # read in DMs and such
+        dm = pulses.loc[(pulse_id, 'sb1'), 'DM']
         amp_guesses = pulses.loc[pulse_id, 'Amp Guess']
         time_guesses = pulses.loc[pulse_id, 'Peak Time Guess']
 
         begin_time = int(time_guesses.min() - int(15e-3 / (tavg * tsamp)))
         end_time = int(time_guesses.max() + int(15e-3 / (tavg * tsamp)))
-
-        dm = pulses.loc[(pulse_id, 'sb1'), 'DM']
 
         waterfall, t, peak_bin = import_fil_fits.fits_to_np(
             filename, dm=dm, maskfile=maskfile, bandpass=True, offpulse=offpulsefile, AO=True,
@@ -132,12 +91,9 @@ if __name__ == '__main__':
         waterfall = waterfall.data * maskbool
 
         time_guesses -= begin_time
-        #time_guesses = list(time_guesses)
 
-        prof = np.mean(waterfall, axis=0)
-        spec = np.mean(waterfall, axis=1)
-        timebins = np.arange(len(prof))
-        freqbins = np.arange(len(spec))
+        timebins = np.arange(waterfall.shape[1])
+        freqbins = np.arange(waterfall.shape[0])
 
         print(time_guesses)
         print(amp_guesses)
@@ -163,8 +119,8 @@ if __name__ == '__main__':
                 guessvals = []
                 while len(guessvals) != n_sbs*3:
                     secondanswer = input("Give the intial guesses in samples and channels in the"
-                                         "form t_std_sb1,t_std_sb2,...,f_peak_sb1,...,f_std_sb1,... "
-                                         f"with {n_sbs*3} guesses in total.")
+                                         "form t_std_sb1,t_std_sb2,...,f_peak_sb1,...,f_std_sb1,"
+                                         f"... with {n_sbs*3} guesses in total.")
                     guessvals = [int(x.strip()) for x in secondanswer.split(',')]
                 t_std_guess = guessvals[0 : n_sbs]
                 freq_peak_guess = guessvals[n_sbs : 2*n_sbs]
@@ -175,17 +131,17 @@ if __name__ == '__main__':
         os.chdir('..')
 
         pulses.loc[pulse_id, 'Gauss Amp'] = bestfit_params[:, 0]
-        pulses.loc[pulse_id, 'Gauss Amp e',] = bestfit_errors[:, 0]
-        pulses.loc[pulse_id, 't_cent / s', ] = bestfit_params[:, 1] * tsamp * tavg
-        pulses.loc[pulse_id, 't_cent_e / s',] = bestfit_errors[:, 1] * tsamp * tavg
-        pulses.loc[pulse_id, 't_std / s', ] = bestfit_params[:, 3] * tsamp * tavg
-        pulses.loc[pulse_id, 't_std_e / s',] = bestfit_errors[:, 3] * tsamp * tavg
-        pulses.loc[pulse_id, 'f_cent / MHz', ] = bestfit_params[:, 2] * 1.5625
-        pulses.loc[pulse_id, 'f_cent_e / MHz',] = bestfit_errors[:, 2] * 1.5625
-        pulses.loc[pulse_id, 'f_std / MHz', ] = bestfit_params[:, 4] * 1.5625
-        pulses.loc[pulse_id, 'f_std_e / MHz',] = bestfit_errors[:, 4] * 1.5625
-        pulses.loc[pulse_id, 'f_ref / MHz',] = f_ref
-        pulses.loc[pulse_id, 'Gauss Angle', ] = bestfit_params[:, 5]
+        pulses.loc[pulse_id, 'Gauss Amp e'] = bestfit_errors[:, 0]
+        pulses.loc[pulse_id, 't_cent / s'] = bestfit_params[:, 1] * tsamp * tavg
+        pulses.loc[pulse_id, 't_cent_e / s'] = bestfit_errors[:, 1] * tsamp * tavg
+        pulses.loc[pulse_id, 't_std / s'] = bestfit_params[:, 3] * tsamp * tavg
+        pulses.loc[pulse_id, 't_std_e / s'] = bestfit_errors[:, 3] * tsamp * tavg
+        pulses.loc[pulse_id, 'f_cent / MHz'] = bestfit_params[:, 2] * 1.5625
+        pulses.loc[pulse_id, 'f_cent_e / MHz'] = bestfit_errors[:, 2] * 1.5625
+        pulses.loc[pulse_id, 'f_std / MHz'] = bestfit_params[:, 4] * 1.5625
+        pulses.loc[pulse_id, 'f_std_e / MHz'] = bestfit_errors[:, 4] * 1.5625
+        pulses.loc[pulse_id, 'f_ref / MHz'] = ref_freq
+        pulses.loc[pulse_id, 'Gauss Angle'] = bestfit_params[:, 5]
         pulses.loc[pulse_id, 'Gauss Angle e'] = bestfit_errors[:, 5]
 
         pulses.to_hdf(out_hdf5_file, 'pulses')
