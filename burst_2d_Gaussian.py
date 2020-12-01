@@ -18,7 +18,7 @@ from astropy.modeling import models, fitting
 
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
 
-def gen_Gauss2D_model(peak_bins, peak_amps, f0=1600., bw=200., dt=2.0 ):
+def gen_Gauss2D_model(peak_bins, peak_amps, f0=None, bw=None, dt=None):
     '''
     Generates a 2D Gaussian astropy model for LSQ fitting.
     The number of Gaussians included in the model is infered from the length of peak_bins.
@@ -34,13 +34,21 @@ def gen_Gauss2D_model(peak_bins, peak_amps, f0=1600., bw=200., dt=2.0 ):
     astropy 2D Gaussian model object
     '''
     npeaks=len(peak_bins)
+    if f0 is None:
+        f0 = npeaks * [1600.]
+    if bw is None:
+        bw = npeaks * [200.]
+    if dt is None:
+        dt = npeaks * [2.0]
 
     #Loop over peaks and add Gaussians to model
     for ii in range(npeaks):
-        if ii == 0: g_guess = models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0, \
-                                            x_stddev=dt, y_stddev=bw, theta=0.0)
-    else: g_guess += models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0, \
-                                            x_stddev=dt, y_stddev=bw, theta=0.0)
+        if ii == 0:
+            g_guess = models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0[ii],
+                                        x_stddev=dt[ii], y_stddev=bw[ii], theta=0.0)
+        else:
+            g_guess += models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0[ii],
+                                         x_stddev=dt[ii], y_stddev=bw[ii], theta=0.0)
     return g_guess
 
 def fit_Gauss2D_model(data, tdum, fdum, g_guess):
