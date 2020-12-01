@@ -78,17 +78,17 @@ class identify_bursts(object):
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         indices = np.array(self.peak_times).argsort()
-        self.peak_times = np.array(self.peak_times)[indices]
-        self.peak_amps = np.array(self.peak_amps)[indices]
+        self.peak_times = list(np.array(self.peak_times)[indices])
+        self.peak_amps = list(np.array(self.peak_amps)[indices])
 
     def onpress(self, event):
         tb = plt.get_current_fig_manager().toolbar
         if tb.mode == '':
             y1 = event.ydata
             x1 = event.xdata
-            self.peak_times = np.append(self.peak_times, x1)
+            self.peak_times.append(x1)
             maxval = np.max(self.arr[:, int(x1)])
-            self.peak_amps = np.append(self.peak_amps, maxval)
+            self.peak_amps.append(maxval)
             self.axes.scatter(x1, y1, lw=3, color='r', marker='x', s=100, zorder=10)
             plt.draw()
 
@@ -112,16 +112,16 @@ class offpulse(object):
         if filename.endswith(".fits"):
             fits = psrfits.PsrfitsFile(filename)
             tsamp = fits.specinfo.dt
-            if initial_mask is None:
-                arr, startt, peak_bin = import_fil_fits.fits_to_np(filename, dm=dm, maskfile=None,
-                                                                   bandpass=False, offpulse=None,
-                                                                   AO=True, hdf5=in_hdf5_file,
-                                                                   index=pulseindex, tavg=tavg)
-            else:
-                arr, startt, peak_bin = import_fil_fits.fits_to_np(
-                    filename, dm=dm, maskfile=initial_mask, bandpass=False, offpulse=None,
-                    AO=True, hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
-                    )
+            #if initial_mask is None:
+            #    arr, startt, peak_bin = import_fil_fits.fits_to_np(filename, dm=dm, maskfile=None,
+            #                                                       bandpass=False, offpulse=None,
+            #                                                       AO=True, hdf5=in_hdf5_file,
+            #                                                       index=pulseindex, tavg=tavg)
+            #else:
+            arr, startt, peak_bin = import_fil_fits.fits_to_np(
+                filename, dm=dm, maskfile=initial_mask, bandpass=False, offpulse=None,
+                AO=True, hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
+                )
             self.peak_bin = peak_bin
             self.tsamp = tsamp
 
@@ -215,16 +215,16 @@ class RFI(object):
         if filename.endswith(".fits"):
             fits = psrfits.PsrfitsFile(filename)
             tsamp = fits.specinfo.dt
-            if initial_mask is None:
-                arr, startt, peak_bin = import_fil_fits.fits_to_np(
-                    filename, dm=dm, maskfile=None, bandpass=False, offpulse=None, AO=True,
-                    hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
-                    )
-            else:
-                arr, startt, peak_bin = import_fil_fits.fits_to_np(
-                    filename, dm=dm, maskfile=initial_mask, bandpass=False, offpulse=None,
-                    AO=True, hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
-                    )
+            #if initial_mask is None:
+            #    arr, startt, peak_bin = import_fil_fits.fits_to_np(
+            #        filename, dm=dm, maskfile=None, bandpass=False, offpulse=None, AO=True,
+            #        hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
+            #        )
+            #else:
+            arr, startt, peak_bin = import_fil_fits.fits_to_np(
+                filename, dm=dm, maskfile=initial_mask, bandpass=False, offpulse=None,
+                AO=True, hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
+                )
             self.total_N = arr.shape[1]
             self.freqs = fits.frequencies
             self.nchan = len(self.freqs)
@@ -404,7 +404,7 @@ if __name__ == '__main__':
         options.infile = args[-1]
 
     basename = options.infile
-    pulses_txt = 'pulse_nos.txt'
+    #pulses_txt = 'pulse_nos.txt'
     in_hdf5_file = f'{basename}.hdf5'
 
     if options.mask is not None:
@@ -413,7 +413,7 @@ if __name__ == '__main__':
         initial_mask = None
 
     pulses_hdf5 = pd.read_hdf(in_hdf5_file, 'pulses')
-    pulses_hdf5 = pulses_hdf5.loc[pulses_hdf5['Pulse'] == 0]
+    pulses_hdf5 = pulses_hdf5.loc[pulses_hdf5['Pulse'] == 0].sort_values('Sigma', ascending=False)
 
     # find pulses in this dataset
     if options.pulse is not None:
@@ -446,14 +446,12 @@ if __name__ == '__main__':
     else:
         prop_df = pd.DataFrame()
 
+    print(prop_df)
     in_hdf5_file = f'../{in_hdf5_file}'
 
     for pulse_id in pulses:
-        DMs = []    # for the DMs
         ind1 = []   # for the burst name indices
         ind2 = []   # for the sub burst name indices
-        peak_times = []
-        amps = []
 
         print("RFI zapping of observation %s, pulse ID %s" % (basename, pulse_id))
 
@@ -543,7 +541,7 @@ if __name__ == '__main__':
         if answer == 'n':
             answer_sub = 1
 
-        DMs.append(answer_sub*[dm])
+        DMs = answer_sub*[dm]
         for j in range(answer_sub):
             ind1.append(str(pulse_id))
             ind2.append('sb' + str(j + 1))
@@ -600,8 +598,8 @@ if __name__ == '__main__':
                                        in_hdf5_file, pulse_id, maskfile, offpulsefile)
             plt.show()
 
-        peak_times.append(burst_id.peak_times)
-        amps.append(burst_id.peak_amps)
+        peak_times = burst_id.peak_times
+        amps = burst_id.peak_amps
 
         if answer == 'y':
             for other_bursts in range(answer_burst):
@@ -631,22 +629,24 @@ if __name__ == '__main__':
                 off_pulse = off_pulse[np.append(np.where(off_pulse < begin_eb)[0],
                                                 np.where(off_pulse > end_eb)[0])]
 
-                peak_times.append(burst_id.peak_times)
-                amps.append(burst_id.peak_amps)
+                peak_times.extend(burst_id.peak_times)
+                amps.extend(burst_id.peak_amps)
 
             offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
             with open(offpulsefile, 'wb') as foff:
                 pickle.dump(off_pulse, foff)
 
             os.system('cp ./%s_%s_offpulse_time.pkl ../%s/%s_%s_offpulse_time.pkl' %
-                      (basename, pulse_id, str(pulse_id) + '-' + str(bu + 1), basename,
-                       str(pulse_id) + '-' + str(bu + 1)))
+                      (basename, pulse_id, str(pulse_id) + '-' + str(other_bursts + 1), basename,
+                       str(pulse_id) + '-' + str(other_bursts + 1)))
 
         os.chdir('..')
 
-        indices = [np.array([str(x) for x in ind1]), np.array(ind2)]
+        indices = pd.MultiIndex.from_tuples(zip(ind1,ind2), names=('pulse_id', 'subburst'))
         bursts = {'DM': DMs, 'Peak Time Guess': peak_times, 'Amp Guess': amps}
+        #print(indices, bursts)
         df = pd.DataFrame(data=bursts, index=indices)
-        print(df)
-        prop_df.append(df)
+        #print(df)
+        prop_df = prop_df.append(df)
+        print(prop_df)
         prop_df.to_hdf('%s_burst_properties.hdf5' % basename, 'pulses')
