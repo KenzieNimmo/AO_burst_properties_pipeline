@@ -383,14 +383,14 @@ if __name__ == '__main__':
     parser.add_option('-t', '--tavg', dest='tavg', type='int', default=1,
                       help="If -t option is used, time averaging is applied using the factor "
                            "given after -t.")
-    parser.add_option('-d', '--dm', dest='dm', type='float', default=-1.0,
+    parser.add_option('-d', '--dm', dest='dm', type='float', default=None,
                       help="If -d option is used, the DM correction will be applied using -d "
                            "<num> value, else it will use the single pulse search determined "
                            "value.")
     parser.add_option('-m', '--mask', dest='mask', type='string', default=None,
                       help="-m <filename of mask file>. Use this to set an initial mask (if "
                            "there are channels that are always contaminated for example).")
-    parser.add_option('-p', '--pulse', type='int', default=None,
+    parser.add_option('-p', '--pulse', type='str', default=None,
                       help="Give a pulse id to process only this pulse.")
 
     options, args = parser.parse_args()
@@ -458,7 +458,7 @@ if __name__ == '__main__':
         os.chdir(str(pulse_id))
         filename = f'{basename}_{pulse_id}.fits'
 
-        if options.dm < 0:
+        if options.dm is None:
             # use the DM from detection to de-disperse in this initial stage
             dm = pulses_hdf5.loc[pulse_id, 'DM']
         else:
@@ -470,7 +470,7 @@ if __name__ == '__main__':
         except ValueError:
             print(f'File {filename} does not exist.')
             os.chdir('..')
-            #continue
+            continue
 
         #total_N=fits.specinfo.N / tavg
         t_samp = fits.specinfo.dt
@@ -555,27 +555,26 @@ if __name__ == '__main__':
                 sub_components_other_bursts = input(
                     "Give the number of components per burst (in order of arrival time -- "
                     "excluding main burst), separated by commas e.g. 3,2,1,3 ")
-                vals = [int(x.strip()) for x in sub_components_other_bursts.split(',')]
+                n_subbs = [int(x.strip()) for x in sub_components_other_bursts.split(',')]
 
             if answer_burst_sub == 'n':
-                vals = np.ones(answer_burst)
+                n_subbs = answer_burst*[1]
 
         if answer == 'n':
-            answer_burst = 1
+            answer_burst = 0
 
-        if answer_burst > 1:
-            for bu in range(answer_burst):
+        for bu in range(answer_burst):
+            #os.system('mkdir ../%s' % str(pulse_id) + '-' + str(bu + 1))
+            #os.system('cp ./%s ../%s/%s_%s.fits' % (
+            #    filename, str(pulse_id) + '-' + str(bu + 1), basename,
+            #    str(pulse_id) + '-' + str(bu + 1)))
+            #os.system('cp ./%s_%s_mask.pkl ../%s/%s_%s_mask.pkl' % (
+            #    basename, pulse_id, str(pulse_id) + '-' + str(bu + 1), basename,
+            #    str(pulse_id) + '-' + str(bu + 1)))
+            for sb in range(n_subbs[bu]):
                 ind1.append(str(pulse_id) + '-' + str(bu + 1))
-                os.system('mkdir ../%s' % str(pulse_id) + '-' + str(bu + 1))
-                os.system('cp ./%s ../%s/%s_%s.fits' % (
-                    filename, str(pulse_id) + '-' + str(bu + 1), basename,
-                    str(pulse_id) + '-' + str(bu + 1)))
-                os.system('cp ./%s_%s_mask.pkl ../%s/%s_%s_mask.pkl' % (
-                    basename, pulse_id, str(pulse_id) + '-' + str(bu + 1), basename,
-                    str(pulse_id) + '-' + str(bu + 1)))
-                for sb in range(int(vals[bu])):
-                    ind2.append('sb' + str(sb + 1))
-                    DMs.append(dm)
+                ind2.append('sb' + str(sb + 1))
+                DMs.append(dm)
 
         rows = 1
         cols = 1
@@ -589,7 +588,7 @@ if __name__ == '__main__':
 
         main_burst_expected = answer_sub
 
-        while len(burst_id.peak_times) < main_burst_expected:
+        while len(burst_id.peak_times) != main_burst_expected:
             fig = plt.figure(figsize=(10, 10))
             gs = gridspec.GridSpec(rows, cols)
             print("The number of selections did not match the total number of components. "
@@ -610,9 +609,9 @@ if __name__ == '__main__':
                 burst_id = identify_bursts(filename, gs, tavg, dm,
                                            in_hdf5_file, pulse_id, maskfile, offpulsefile)
                 plt.show()
-                other_burst_expected = int(vals[other_bursts])
+                other_burst_expected = n_subbs[other_bursts]
 
-                while len(burst_id.peak_times) < other_burst_expected:
+                while len(burst_id.peak_times) != other_burst_expected:
                     fig = plt.figure(figsize=(10, 10))
                     gs = gridspec.GridSpec(rows, cols)
                     print("The number of selections did not match the total number of "
@@ -622,12 +621,11 @@ if __name__ == '__main__':
                     plt.show()
 
                 # remove the additional burst from the offpulsetimes
-                begin_eb = burst_id.peak_times[0] - (10e-3 / (tsamp * tavg))
-                end_eb = burst_id.peak_times[-1] + (10e-3 / (tsamp * tavg))
+                begin_eb = np.min(burst_id.peak_times) - (10e-3 / (tsamp * tavg))
+                end_eb = np.max(burst_id.peak_times) + (10e-3 / (tsamp * tavg))
 
                 off_pulse = np.array(off_pulse)
-                off_pulse = off_pulse[np.append(np.where(off_pulse < begin_eb)[0],
-                                                np.where(off_pulse > end_eb)[0])]
+                off_pulse = off_pulse[(off_pulse < begin_eb) | (off_pulse > end_eb)]
 
                 peak_times.extend(burst_id.peak_times)
                 amps.extend(burst_id.peak_amps)
@@ -636,15 +634,14 @@ if __name__ == '__main__':
             with open(offpulsefile, 'wb') as foff:
                 pickle.dump(off_pulse, foff)
 
-            os.system('cp ./%s_%s_offpulse_time.pkl ../%s/%s_%s_offpulse_time.pkl' %
-                      (basename, pulse_id, str(pulse_id) + '-' + str(other_bursts + 1), basename,
-                       str(pulse_id) + '-' + str(other_bursts + 1)))
+            #os.system('cp ./%s_%s_offpulse_time.pkl ../%s/%s_%s_offpulse_time.pkl' %
+            #          (basename, pulse_id, str(pulse_id) + '-' + str(other_bursts + 1), basename,
+            #           str(pulse_id) + '-' + str(other_bursts + 1)))
 
         os.chdir('..')
 
         indices = pd.MultiIndex.from_tuples(zip(ind1,ind2), names=('pulse_id', 'subburst'))
         bursts = {'DM': DMs, 'Peak Time Guess': peak_times, 'Amp Guess': amps}
-        #print(indices, bursts)
         df = pd.DataFrame(data=bursts, index=indices)
         #print(df)
         prop_df = prop_df.append(df)
