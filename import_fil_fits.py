@@ -11,7 +11,7 @@ import pickle
 import matplotlib.pyplot as plt
 #import psrfits_pipe as psrfits
 from presto import psrfits
-from astropy.io import fits as astrofits
+#from astropy.io import fits as astrofits
 import pandas as pd
 import sys
 
@@ -48,7 +48,7 @@ def filterbank_to_np(filename, dm=None, maskfile=None,
 
 
 def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None,
-               AO=False, hdf5=None, index=None, plot=False, tavg=1):
+               AO=False, hdf5=None, index=None, plot=False, tavg=1, t_cut=100e-3):
     """
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
@@ -66,18 +66,23 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
     fits = psrfits.PsrfitsFile(filename)
     total_N = int(fits.specinfo.N)
     t_samp = fits.specinfo.dt
-    npoln = fits.npoln
-    imjd, fmjd = psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
-    tstart = imjd + fmjd
+    #npoln = fits.npoln
+    #imjd, fmjd = psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
+    #tstart = imjd + fmjd
     if AO is True:
-        fits_file = astrofits.open(filename, memmap=True)
-        subint_hdu = fits_file[1]
-        subint_hdr = subint_hdu.header
-        begin_subint = subint_hdr['NSUBOFFS']
-        sample_per_subint = subint_hdr['NSBLK']
-        time_from_orig_begin_time = (
-            begin_subint * sample_per_subint * t_samp) / (24 * 3600.)  # MJD
-        new_tstart = tstart + time_from_orig_begin_time
+        #fits_file = astrofits.open(filename, memmap=True)
+        #subint_hdu = fits_file[1]
+        #subint_hdr = subint_hdu.header
+        #begin_subint = subint_hdr['NSUBOFFS']
+        #sample_per_subint = subint_hdr['NSBLK']
+        #time_from_orig_begin_time = (
+        #    begin_subint * sample_per_subint * t_samp) / (24 * 3600.)  # MJD
+        #new_tstart = tstart + time_from_orig_begin_time
+        imjd, fmjd = psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
+        obs_start = imjd + fmjd                  # The observation start in MJD
+        file_tstart = fits.specinfo.start_MJD[0]  # The cutout start
+        # In seconds after the observation starts
+        file_tstart = (file_tstart - obs_start) * 24 * 3600.
 
         if hdf5 is not None and index is not None:
             hdf5_file = hdf5
@@ -87,7 +92,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
                 pulses = pd.read_hdf(hdf5_file, 'pulses')
             index = int(index)
             pulses = pulses.loc[pulses['Pulse'] == 0]
-            burst_time = pulses.loc[index, 'Time'] / (24 * 3600.) + tstart  # MJD
+            burst_time = pulses.loc[index, 'Time'] #/ (24 * 3600.) + obs_start  # MJD
 
             # NB: There is an offset between the burst peak time determined above and the burst by ~4.5ms.
             # I think this is a dedispersion artefact but not sure. At the moment hard-coding a shift
@@ -98,8 +103,8 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
             print("Please provide the hdf5 file containing the burst properties and the burst \
                   index from the search pipeline.")
 
-        burstt = (burst_time - new_tstart) * 24 * \
-            3600.  # time in seconds of burst in cropped fits fileim
+        # time in seconds of burst in cropped fits fileim
+        burstt = (burst_time - file_tstart)
         peak_bin = int(burstt / (t_samp))
 
         # begin_bin=0 #number of bins
@@ -114,45 +119,53 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
     if dm is not None:
         spec.dedisperse(dm, padval='mean')  # ,trim=True
 
-    arr = np.array([spec[i] for i in range(fits.specinfo.num_channels)])
+    #arr = np.array([spec[i] for i in range(fits.specinfo.num_channels)])
+    arr = spec.data
 
     if maskfile is not None:
         amaskfile = pickle.load(open(maskfile, 'rb'))
-        amask = [int(i) for i in amaskfile]
-        vmin = np.amin(arr)
-        arr[amask, :] = vmin - 100
-        mask = arr < vmin - 50
+        #amask = [int(i) for i in amaskfile]
+        #vmin = np.min(arr)
+        #arr[amask, :] = vmin - 100
+        #mask = arr < vmin - 50
+        mask = np.zeros(arr.shape, dtype=np.bool)
+        mask[amaskfile] = True
         arr = np.ma.masked_where(mask, arr)
-    arr = np.flip(arr, 0)
+    #arr = np.flip(arr, 0)
     if smooth_val == 1:
         smooth_val = None
     if bandpass is True and offpulse is not None:
         arr = bp(arr, maskfile, offpulse, AO=AO, smooth_val=smooth_val, plot=plot)
     if AO is True:
-        arr = arr[:, peak_bin - int(50e-3 / (t_samp)):peak_bin + int(50e-3 / (t_samp))]
+        start_samp = peak_bin - int(t_cut/2/(t_samp))
+        end_samp = peak_bin + int(t_cut/2/(t_samp))
+        arr = arr[:, start_samp : end_samp]
+        # Note the number of samples before the new start is start_samp (incl the 0)
+        file_tstart += start_samp*t_samp
 
-        tavg = int(tavg)
         if tavg > 1:
             nsamples = arr.shape[1]
-            tavg = float(tavg)
-            if (nsamples / tavg) - int(nsamples / tavg) != 0:
-                print(f"The total number of time bins is {nsamples}, please choose an tscrunch "
-                      "value that divides the total number of samples.")
-                sys.exit()
-            else:
-                newsamps = nsamples / tavg
-                arr = np.array(np.column_stack([np.mean(subint, axis=1)
-                                                for subint in np.hsplit(arr, newsamps)]))
+            if nsamples % tavg != 0:
+                #print(f"The total number of time bins is {nsamples}, please choose an tscrunch "
+                #      "value that divides the total number of samples.")
+                #sys.exit()
+                print('The cutout is slightly adjusted to fit the downsample factor.')
+                arr = arr[:, : -(nsamples % tavg)]
 
-            arr = np.flip(arr, 0)
-            if maskfile is not None:
-                vmin = np.amin(arr)
-                arr[amask, :] = vmin - 100
-                mask = arr < vmin - 50
-                arr = np.ma.masked_where(mask, arr)
-            arr = np.flip(arr, 0)
+            newsamps = nsamples // tavg
+            #arr = np.array(np.column_stack([np.mean(subint, axis=1)
+            #                                for subint in np.hsplit(arr, newsamps)]))
+            arr = arr.reshape(arr.shape[0], newsamps, tavg).mean(axis=-1)
 
-        return arr, new_tstart, int(arr.shape[1] / 2.)
+            #arr = np.flip(arr, 0)
+            #if maskfile is not None:
+            #    vmin = np.amin(arr)
+            #    arr[amask, :] = vmin - 100
+            #    mask = arr < vmin - 50
+            #    arr = np.ma.masked_where(mask, arr)
+            #arr = np.flip(arr, 0)
+
+        return arr, file_tstart, arr.shape[1] // 2
     else:
         return arr
 
@@ -215,17 +228,18 @@ def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
             sys.exit()
 
     offpulse = pickle.load(open(offpulsefile, 'rb'))
-    offpulse = [int(x) for x in offpulse]
+    #offpulse = [int(x) for x in offpulse]
     spec = np.mean(arr[:, offpulse], axis=1)
+    chan_std = np.std(arr[:, offpulse], axis=1)
     unsmoothed_spec = spec.copy()
     # smooth the bandpass spectrum
-    speclen = len(spec)
+    #speclen = len(spec)
 
-    mask = np.zeros_like(spec)
-    if maskfile is not None:
-        amaskfile = pickle.load(open(maskfile, 'rb'))
-        amask = [speclen - int(i) - 1 for i in amaskfile]
-        mask[amask] = 1
+    #mask = np.zeros_like(spec)
+    #if maskfile is not None:
+    #    amaskfile = pickle.load(open(maskfile, 'rb'))
+    #    amask = [speclen - int(i) - 1 for i in amaskfile]
+    #    mask[amask] = 1
     if smooth_val is not None:
         print("Caution: smoothing is not currently implemented.")
         print("Not smoothing the bandpass")
@@ -234,13 +248,14 @@ def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
         #spec = smooth(spec,window_len=smooth_val)[a-1:-(a+1)]
         #spec = np.ma.masked_where(mask==True,spec)
 
-    arr2 = arr.copy()
+    #arr2 = arr.copy()
 
-    for i in range(arr.shape[1]):
-        arr2[:, i] /= spec
+    arr -= spec[:, np.newaxis]
+    #for i in range(arr.shape[1]):
+    #    arr2[:, i] /= spec
         # arr[:,i]/=maskfit
 
-    arr2 -= np.mean(arr2)
+    arr /= chan_std[:, np.newaxis]
 
     # diagnostic plots
     if plot is True:
@@ -249,9 +264,9 @@ def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
         axes[0].plot(spec, 'r', label='smoothed spectrum')
         axes[0].legend()
 
-        axes[1].plot(np.mean(arr2, axis=1), 'r', label='bandpass corrected')
+        axes[1].plot(np.mean(arr, axis=1), 'r', label='bandpass corrected')
         axes[1].set_xlabel('Frequency')
         axes[1].legend()
         plt.savefig('bandpass_diagnostic.pdf', format='pdf')
         plt.show()
-    return arr2
+    return arr
