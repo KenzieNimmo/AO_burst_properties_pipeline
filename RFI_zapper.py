@@ -21,6 +21,7 @@ import optparse
 #import psrfits_pipe as psrfits
 from presto import psrfits
 import pandas as pd
+import warnings
 
 
 def find_nearest(array, value):
@@ -252,15 +253,14 @@ class RFI(object):
         self.ax3 = spec
         self.ax2 = ax2
         self.ax2plot = prof
-        self.ax1plot = self.ax1.imshow(
-            arr,
-            aspect='auto',
-            vmin=np.amin(arr),
-            vmax=threshold,
-            cmap=self.cmap,
-            origin='lower',
-            interpolation='nearest',
-            picker=True)
+        self.ax1plot = self.ax1.imshow(arr,
+                                       aspect='auto',
+                                       vmin=np.amin(arr),
+                                       vmax=threshold,
+                                       cmap=self.cmap,
+                                       origin='upper',
+                                       interpolation='nearest',
+                                       picker=True)
         self.cmap.set_over(color='pink')
         self.cmap.set_bad(color='red')
         self.ax1.set_xlim((peak_bin - (50e-3 / (tsamp * tavg))),
@@ -269,7 +269,7 @@ class RFI(object):
         self.ax3plot, = self.ax3.plot(spectrum, self.freqbins, 'k-', zorder=2)
         self.ax3.tick_params(axis='x', which='both', top='off', bottom='off', labelbottom='off')
         self.ax3.tick_params(axis='y', labelleft='off')
-        self.ax3.set_ylim(self.freqbins[0], self.freqbins[-1])
+        self.ax3.set_ylim(self.freqbins[-1], self.freqbins[0])
         x_range = spectrum.max() - spectrum.min()
         self.ax3.set_xlim(-x_range / 4., x_range * 6. / 5.)
 
@@ -359,21 +359,24 @@ class RFI(object):
 
                 self.cmap.set_over(color='pink')
                 plt.draw()
-
                 if self.begin_chan[-1] > index2:
                     for i in range(len(np.arange(index2, self.begin_chan[-1] + 1, 1))):
                         self.mask_chan.append(
-                            self.nchan - 1 - np.arange(index2, self.begin_chan[-1] + 1, 1)[i])
+                            np.arange(index2, self.begin_chan[-1] + 1, 1)[i])
+                            #self.nchan - 1 - np.arange(index2, self.begin_chan[-1] + 1, 1)[i])
                 else:
                     for i in range(len(np.arange(self.begin_chan[-1], index2 + 1, 1))):
                         self.mask_chan.append(
-                            self.nchan - 1 - np.arange(self.begin_chan[-1], index2 + 1, 1)[i])
+                            np.arange(self.begin_chan[-1], index2 + 1, 1)[i])
+                            #self.nchan - 1 - np.arange(self.begin_chan[-1], index2 + 1, 1)[i])
 
                 self.final_spec = np.mean(arr, axis=1)
                 self.final_prof = np.mean(arr, axis=0)
 
 
 if __name__ == '__main__':
+    warnings.filterwarnings("ignore", message="Polarization is AABBCRCI, averaging AA and BB")
+
     parser = optparse.OptionParser(usage='%prog [options] infile_basename',
                                    description="Interactive RFI zapper")
 
@@ -415,9 +418,9 @@ if __name__ == '__main__':
     pulses_hdf5 = pd.read_hdf(in_hdf5_file, 'pulses')
     pulses_hdf5 = pulses_hdf5.loc[pulses_hdf5['Pulse'] == 0].sort_values('Sigma', ascending=False)
 
-    # find pulses in this dataset
+    # Find pulses in this dataset
     if options.pulse is not None:
-        pulses = [options.pulse]
+        pulses = [int(options.pulse)]
     else:
         pulses = pulses_hdf5.index.to_list()
         # Exclude alredy processed pulses
@@ -436,7 +439,7 @@ if __name__ == '__main__':
 #         pulses_arr.append(int(pulses_str[i].replace('/\n', '')))
 # =============================================================================
 
-    smooth = 10  # smoothing window
+    smooth = None  # smoothing window
     tavg = options.tavg
     favg = options.favg
 
@@ -639,7 +642,7 @@ if __name__ == '__main__':
             #           str(pulse_id) + '-' + str(other_bursts + 1)))
 
         os.chdir('..')
-
+        # Note: peak_times is the sample
         indices = pd.MultiIndex.from_tuples(zip(ind1,ind2), names=('pulse_id', 'subburst'))
         bursts = {'DM': DMs, 'Peak Time Guess': peak_times, 'Amp Guess': amps}
         df = pd.DataFrame(data=bursts, index=indices)
