@@ -136,6 +136,8 @@ if __name__ == '__main__':
 
         os.chdir('..')
 
+        imjd, fmjd = psrfits.DATEOBS_to_MJD(fits.specinfo.date_obs)
+        obs_start = imjd + fmjd
         fsamp = fits.specinfo.df
         f_ref = fits.specinfo.hi_freq
 
@@ -149,9 +151,11 @@ if __name__ == '__main__':
         pulses.loc[pulse_id, 'f_cent_e / MHz'] = bestfit_errors[:, 2] * fsamp
         pulses.loc[pulse_id, 'f_std / MHz'] = bestfit_params[:, 4] * fsamp
         pulses.loc[pulse_id, 'f_std_e / MHz'] = bestfit_errors[:, 4] * fsamp
-        pulses.loc[pulse_id, 'f_ref / MHz'] = f_ref
         pulses.loc[pulse_id, 'Gauss Angle'] = bestfit_params[:, 5]
         pulses.loc[pulse_id, 'Gauss Angle e'] = bestfit_errors[:, 5]
+        pulses.loc[pulse_id, 't_obs / MJD'] = obs_start
+        pulses.loc[pulse_id, 'f_ref / MHz'] = f_ref
+
 
         pulses.to_hdf(out_hdf5_file, 'pulses')
         print(pulses)
