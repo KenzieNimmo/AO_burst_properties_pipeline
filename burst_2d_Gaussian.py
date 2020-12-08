@@ -51,7 +51,7 @@ def gen_Gauss2D_model(peak_bins, peak_amps, f0=None, bw=None, dt=None):
                                          x_stddev=dt[ii], y_stddev=bw[ii], theta=0.0)
     return g_guess
 
-def fit_Gauss2D_model(data, tdum, fdum, g_guess):
+def fit_Gauss2D_model(data, tdum, fdum, g_guess, weights=None):
     '''
     Fits the 2D data provided to the astropy 2D Gaussian model object
       using the LM least squares routine
@@ -66,7 +66,7 @@ def fit_Gauss2D_model(data, tdum, fdum, g_guess):
     xdum, ydum = np.meshgrid(tdum, fdum)
 
     fit_LM = fitting.LevMarLSQFitter()
-    fit_2dG = fit_LM(g_guess, xdum, ydum, data)
+    fit_2dG = fit_LM(g_guess, xdum, ydum, data, weights=weights)
 
     return fit_2dG, fit_LM
 
@@ -83,16 +83,15 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
     npks = int(npks)
     bparams = best_gauss.parameters.reshape((npks,6))
 
-    #Pull out uncertainties
-#<<<<<<< HEAD
-    #cov_mat=fitter.fit_info['param_cov']
-    #bunc=np.sqrt(np.diag(cov_mat))
-    bunc = np.zeros_like(bparams)
-#=======
-    cov_mat=fitter.fit_info['param_cov']
-    bunc=np.sqrt(np.diag(cov_mat))
-    print(bunc)
-#>>>>>>> ab818cdd17aa416aeaed0b3e93c5c36dcf917a20
+    # Pull out uncertainties
+    cov_mat = fitter.fit_info['param_cov']
+    if cov_mat is None:
+        print("No covariance matrix was returned, try again. The fit_info['message'] is")
+        print(fitter.fit_info['message'])
+        bunc = np.zeros_like(bparams)
+    else:
+        bunc = np.sqrt(np.diag(cov_mat))
+
     bunc.shape=((npks,6))
 
     if verbose:
@@ -146,8 +145,8 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
     fig=py.figure(figsize=(12,9))
 
     ax1 = fig.add_axes([0.1, 0.1, 0.6, 0.6])
-    ax2 = fig.add_axes([0.1, 0.6, 0.6, 0.2], sharex=ax1)
-    ax3 = fig.add_axes([0.7, 0.1, 0.2, 0.5], sharey=ax1)
+    ax2 = fig.add_axes([0.1, 0.7, 0.6, 0.2], sharex=ax1)
+    ax3 = fig.add_axes([0.7, 0.1, 0.2, 0.6], sharey=ax1)
 
     for i in ax2.get_xticklabels(): i.set_visible(False)
     for i in ax3.get_yticklabels(): i.set_visible(False)
@@ -176,7 +175,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
 
     #Set axis ranges
     ax1.set_xlim((min(xarr), max(xarr)))
-    ax1.set_ylim((min(yarr), max(yarr)))
+    ax1.set_ylim((max(yarr), min(yarr)))
 
     return fig
 
