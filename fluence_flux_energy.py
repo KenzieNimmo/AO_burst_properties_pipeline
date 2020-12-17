@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import pickle
 import sys
 import optparse
-import os
 from presto import psrfits
 import pandas as pd
 import import_fil_fits
@@ -33,10 +32,8 @@ def fluence_flux(arr, bw, t_cent, width, tsamp, SEFD, offpulse):
     fluence_flux(arr, bw, t_cent, width, tsamp, offpulse)
     arr is the burst dynamic spectrum
     bw is the bandwidth in MHz
-    t_cent is the peak time of the burst found using the 2D Gaussian fit (or by e\
-ye)
-    width is the FWHM duration of the burst found using the 2D Gaussian fit (or b\
-y eye)
+    t_cent is the peak time of the burst found using the 2D Gaussian fit (or by eye)
+    width is the FWHM duration of the burst found using the 2D Gaussian fit (or by eye)
     tsamp is the sampling time of the data in seconds
     offpulse is the pickle file containing the offpulse times
     Idea is to subtract mean and divide by the rms to normalize the time series
@@ -48,13 +45,12 @@ y eye)
     with open(str(offpulse), 'rb') as f:
         offtimes = pickle.load(f)
 
-    f.close()
-
     totalbins = arr.shape[1]  # number of bins
     offtimes = offtimes[np.where(offtimes < totalbins)[0]]
 
     print(offtimes)
     t_cent = t_cent / tsamp  # in bins
+    # TODO: t_cent is with reference to the obsrvation start not the cutout
     width = width / tsamp  # in bins
 
     conv = 2.355
@@ -139,8 +135,10 @@ if __name__ == '__main__':
     parser.add_option('-d', '--distance', dest='distance', type='float',
                       help="Distance to the FRB for energy calculation in Mpc (not required).",
                       default=None)
+    parser.add_option('-p', '--pulse', type='str', default=None,
+                      help="Give a pulse id to process only this pulse.")
 
-    (options, args) = parser.parse_args()
+    options, args = parser.parse_args()
 
     if len(args) == 0:
         parser.print_help()
@@ -152,60 +150,49 @@ if __name__ == '__main__':
 
     # getting the basename of the observation and pulse IDs
     basename = options.infile
-    PULSES_TXT = 'pulse_nos.txt'
     # hdf5 file
-    orig_in_hdf5_file = '../%s.hdf5' % basename
-    in_hdf5_file = '%s_burst_properties.hdf5' % basename
+    orig_in_hdf5_file = f'{basename}.hdf5'
+    in_hdf5_file = f'{basename}_burst_properties.hdf5'
     out_hdf5_file = in_hdf5_file
 
-    smooth = 7  # smoothing value used for bandpass calibration
+    smooth = None  # smoothing value used for bandpass calibration
 
-    pulses = open('%s' % PULSES_TXT)
-    pulses_str = []
-    pulses_arr = []
-    for line in pulses:
-        pulses_str.append(line)
+    pulses = pd.read_hdf(in_hdf5_file, 'pulses')
 
-    for i in range(len(pulses_str) - 1):
-        pulses_arr.append(int(pulses_str[i].replace('/\n', '')))
+    # Get pulses to be processed.
+    if options.pulse is not None:
+        burst_ids = [options.pulse]
+    else:
+        burst_ids = pulses.index.get_level_values(0).unique()
+        if 'Peak S/N' in pulses.columns:
+            not_processed = pulses.loc[(slice(None), 'sb1'), 'Peak S/N"'].isna()
+            burst_ids = burst_ids[not_processed]
 
-    SEFDs = []
-    Fluences = []
-    Fluence_e = []
-    PeakFluxs = []
-    Energies = []
-    Distances = []
-    SNRPeaks = []
-
-    pulses_arr = ['9362']
-    for i in range(len(pulses_arr)):
-        print(
-            "Fluence/Peak Flux Density of observation %s, pulse ID %s" %
-            (basename, pulses_arr[i]))
-        os.chdir('%s' % pulses_arr[i])
-        filename = '%s_%s.fits' % (basename, pulses_arr[i])
+    for burst_id in burst_ids:
+        print("Fluence/Peak Flux Density of observation %s, pulse ID %s" %(basename, burst_id))
+        burst_dir = burst_id
+        filename = f'{burst_dir}/{basename}_{burst_id}.fits'
 
         # read in mask file
-        maskfile = '%s_%s_mask.pkl' % (basename, pulses_arr[i])
+        maskfile = f'{burst_dir}/{basename}_{burst_id}_mask.pkl'
         # read in offpulse file
-        offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulses_arr[i])
+        offpulsefile = f'{burst_dir}/{basename}_{burst_id}_offpulse_time.pkl'
 
+        # Get observation parameters
         fits = psrfits.PsrfitsFile(filename)
         tsamp = fits.specinfo.dt
-        freqs = np.flip(fits.frequencies)
-        nchan = len(freqs)
+        freqs = fits.frequencies
+        nchan = fits.specinfo.num_channels
+        fres = fits.specinfo.df
+        bw = fits.specinfo.BW
 
-        fres = np.abs((freqs[-1] - freqs[0]) / (nchan - 1))
-        bw = np.abs(freqs[-1] - freqs[0]) + fres
-
-        pulses = pd.read_hdf('../' + in_hdf5_file, 'pulses')
-        t_cent = pulses.loc[pulses_arr[i], 't_cent [s]']
-        t_fwhm = pulses.loc[pulses_arr[i], 't_width [s]']
-        dm = pulses.loc[pulses_arr[i], 'DM']
+        t_cent = pulses.loc[burst_id, 't_cent / s']
+        t_std = pulses.loc[burst_id, 't_std / s']
+        dm = pulses.loc[(burst_id, 'sb1'), 'DM']
 
         waterfall, t, peak_bin = import_fil_fits.fits_to_np(
             filename, dm=dm, maskfile=maskfile, bandpass=True, offpulse=offpulsefile, AO=True,
-            smooth_val=smooth, hdf5=orig_in_hdf5_file, index=pulses_arr[i])
+            smooth_val=smooth, hdf5=orig_in_hdf5_file, index=burst_id)
 
         if options.SEFD is None:
             if np.max(freqs) < 2000.:
@@ -217,39 +204,23 @@ if __name__ == '__main__':
         else:
             SEFD = options.SEFD
 
-        fluence, flux, prof_flux, spec_flux, peakSNR, fluence_error = fluence_flux(
-            waterfall, bw, t_cent, t_fwhm, tsamp, SEFD, offpulsefile)
+        for sb in pulses.loc[burst_id].index:
+            fluence, flux, prof_flux, spec_flux, peakSNR, fluence_error = fluence_flux(
+                waterfall, bw, t_cent.loc[sb], t_std.loc[sb], tsamp, SEFD, offpulsefile)
 
-        print("Peak S/N", peakSNR)
-        print("Fluence:", fluence, "+-", fluence_error, "Jy ms")
-        print("Peak Flux Density:", flux, "Jy")
+            print("Peak S/N", peakSNR)
+            print("Fluence:", fluence, "+-", fluence_error, "Jy ms")
+            print("Peak Flux Density:", flux, "Jy")
 
-        SNRPeaks.append(peakSNR)
-        Fluences.append(fluence)
-        Fluence_e.append(fluence_error)
-        PeakFluxs.append(flux)
-        SEFDs.append(SEFD)
+            pulses.loc[(burst_id, sb), 'S/N Peak'] = peakSNR
+            pulses.loc[(burst_id, sb), 'Fluence / Jy ms'] = fluence
+            pulses.loc[(burst_id, sb), 'Fluence error / Jy ms'] = fluence_error
+            pulses.loc[(burst_id, sb), 'Peak Flux Density / Jy'] = flux
 
-        if options.distance is not None:
-            specenerg = energy_iso(fluence, options.distance)
-            print("Spectral energy density:", specenerg, "erg Hz^{-1}")
-            Energies.append(specenerg)
-            Distances.append(options.distance)
+            if options.distance is not None:
+                specenerg = energy_iso(fluence, options.distance)
+                print("Spectral energy density:", specenerg, r"erg Hz^-1")
+                pulses.loc[(burst_id, sb), 'Spectral Energy Density / erg Hz^-1'] = specenerg
+                pulses.loc[(burst_id, sb), 'Distance / Mpc'] = options.distance
 
-        os.chdir('..')
-
-    pulses = pd.read_hdf(in_hdf5_file, 'pulses')
-    if options.distance is not None:
-        fit_numbers = {
-            'S/N Peak': SNRPeaks,
-            'Fluence [Jy ms]': Fluences,
-            'Fluence error [Jy ms]': Fluence_e,
-            'Peak Flux Density [Jy]': PeakFluxs,
-            'Spectral Energy Density [erg Hz^{-1}]': Energies,
-            'Distance [Mpc]': Distances}
-    else:
-        print("Please provide the distance to FRB 121102")
-        sys.exit()
-    df = pd.DataFrame(fit_numbers, index=pulses_arr)
-    pulses = pulses.join(df)
     pulses.to_hdf(out_hdf5_file, 'pulses')
