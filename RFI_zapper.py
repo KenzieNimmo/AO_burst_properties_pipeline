@@ -23,6 +23,8 @@ from presto import psrfits
 import pandas as pd
 import warnings
 
+from scipy.stats import normaltest
+
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -100,11 +102,13 @@ class offpulse(object):
         self.end_times = []
         self.lines = {}
 
-        ax1 = plt.subplot(gs[2])  # dynamic spectrum
+        ax1 = plt.subplot(gs[3])  # dynamic spectrum
         ax2 = plt.subplot(gs[0], sharex=ax1)  # profile
         ax3 = plt.subplot(gs[-1], sharey=ax1)  # spectrum
+        ax4 = plt.subplot(gs[-2], sharey=ax1)
         self.ds = ax1
         self.spec = ax3
+        self.stat = ax4  # To plot channel statistics
 
         self.axes = ax2  # off pulse only necessary for the profile which is in subplot ax2
 
@@ -196,7 +200,7 @@ class offpulse(object):
 
 
 class RFI(object):
-    def __init__(self, filename, gs, prof, ds, spec, ithres, ax2, dm, AO,
+    def __init__(self, filename, gs, prof, ds, spec, stat, ithres, ax2, dm, AO,
                  in_hdf5_file, pulseindex, favg, tavg, initial_mask=None):
         self.begin_chan = []
         self.mask_chan = []
@@ -252,6 +256,7 @@ class RFI(object):
         self.ax1 = ds
         self.ax3 = spec
         self.ax2 = ax2
+        self.ax4 = stat
         self.ax2plot = prof
         self.ax1plot = self.ax1.imshow(arr,
                                        aspect='auto',
@@ -273,7 +278,16 @@ class RFI(object):
         x_range = spectrum.max() - spectrum.min()
         self.ax3.set_xlim(-x_range / 4., x_range * 6. / 5.)
 
+        # Plot channel statistics
+        normal_deviation = normaltest(arr, axis=1)[0]
+        self.ax4plot, = self.ax4.plot(normal_deviation, self.freqbins, 'k-', zorder=2)
+        self.ax4.tick_params(axis='x', which='both', top='off', bottom='off', labelbottom='off')
+        self.ax4.tick_params(axis='y', labelleft='off')
+        self.ax4.set_ylim(self.freqbins[-1], self.freqbins[0])
+        self.ax4.set_xlim(-x_range / 4., x_range * 6. / 5.)
+
         fig.add_subplot(self.ax1)
+        fig.add_subplot(self.ax4)
         fig.add_subplot(self.ax3)
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
@@ -348,12 +362,18 @@ class RFI(object):
                 self.ax1plot.set_data(arr)
                 profile = np.mean(arr, axis=0)
                 self.ax2plot.set_data(np.arange(0, self.total_N, 1), profile)
-                self.ax3plot.set_data(np.mean(arr, axis=1), self.freqbins)
+                spectrum = np.mean(arr, axis=1)
+                self.ax3plot.set_data(spectrum, self.freqbins)
+                normal_deviation = normaltest(arr, axis=1)[0]
+                normal_deviation = np.ma.masked_where(mask[:, 0], normal_deviation)
+                self.ax4plot.set_data(normal_deviation, self.freqbins)
+
                 threshold = np.amax(arr) - (np.abs(np.amax(arr) - np.amin(arr)) * self.ithres)
                 self.ithres -= 0.005
                 self.ax1plot.set_clim(vmin=np.amin(arr), vmax=threshold)
-                spectrum = np.mean(arr, axis=1)
+
                 self.ax3.set_xlim(np.amin(spectrum), np.amax(spectrum))
+                self.ax4.set_xlim(np.amin(normal_deviation), np.amax(normal_deviation))
                 y_range = profile.max() - profile.min()
                 self.ax2.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
 
@@ -482,11 +502,11 @@ if __name__ == '__main__':
         total_N = int(100e-3 / (t_samp * tavg))
 
         rows = 2
-        cols = 2
-        fig = plt.figure(figsize=(10, 10))
-        gs = gridspec.GridSpec(2, 2, wspace=0., hspace=0.,
-                               height_ratios=[0.5, ] * (rows - 1) + [2, ],
-                               width_ratios=[5, ] + [1, ] * (cols - 1))
+        cols = 3
+        fig = plt.figure(figsize=(16, 10))
+        gs = gridspec.GridSpec(rows, cols, wspace=0., hspace=0.,
+                               height_ratios=[0.5,]*(rows-1) + [2,],
+                               width_ratios=[5,] + [1,]*(cols-1))
 
         ithres = 0.5
         offpulse_prof = offpulse(filename, gs, dm, True, pulses_hdf5, pulse_id, tavg,
@@ -495,6 +515,7 @@ if __name__ == '__main__':
         spec = offpulse_prof.spec
         prof = offpulse_prof.ax2plot
         ax2 = offpulse_prof.axes
+        stat = offpulse_prof.stat
 
         # instructions
         print("Click and drag on the dynamic spectrum to identify frequency channels to mask.\n"
@@ -504,7 +525,7 @@ if __name__ == '__main__':
               "Click r at any time to refresh the plot and lower the threshold for the pink "
               "points (incase there is too much pink points for example).")
 
-        RFImask = RFI(filename, gs, prof, ds, spec, ithres, ax2, dm, True, in_hdf5_file,
+        RFImask = RFI(filename, gs, prof, ds, spec, stat, ithres, ax2, dm, True, in_hdf5_file,
                       pulse_id, favg, tavg, initial_mask=initial_mask)
         plt.show()
 
@@ -600,7 +621,7 @@ if __name__ == '__main__':
                                        in_hdf5_file, pulse_id, maskfile, offpulsefile)
             plt.show()
 
-        peak_times = burst_id.peak_times
+        peak_times = np.array(burst_id.peak_times) * tavg
         amps = burst_id.peak_amps
 
         if answer == 'y':
@@ -630,7 +651,7 @@ if __name__ == '__main__':
                 off_pulse = np.array(off_pulse)
                 off_pulse = off_pulse[(off_pulse < begin_eb) | (off_pulse > end_eb)]
 
-                peak_times.extend(burst_id.peak_times)
+                peak_times = np.append(peak_times, np.array(burst_id.peak_times) * tavg)
                 amps.extend(burst_id.peak_amps)
 
             offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
