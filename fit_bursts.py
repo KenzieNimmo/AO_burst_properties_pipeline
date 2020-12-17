@@ -73,7 +73,7 @@ if __name__ == '__main__':
         # read in DMs and such
         dm = pulses.loc[(pulse_id, 'sb1'), 'DM']
         amp_guesses = pulses.loc[pulse_id, 'Amp Guess']
-        time_guesses = pulses.loc[pulse_id, 'Peak Time Guess']
+        time_guesses = pulses.loc[pulse_id, 'Peak Time Guess'] / tavg
 
         begin_samp = int(time_guesses.min() - 15e-3 / (tavg * tsamp))
         end_samp = int(time_guesses.max() + 15e-3 / (tavg * tsamp))
@@ -81,7 +81,9 @@ if __name__ == '__main__':
         waterfall, t_ref, _ = import_fil_fits.fits_to_np(
             filename, dm=dm, maskfile=maskfile, bandpass=True, offpulse=offpulsefile, AO=True,
             smooth_val=smooth, hdf5=orig_in_hdf5_file, index=base_pulse, tavg=tavg)
+        print(waterfall.shape)
         waterfall = waterfall[:, begin_samp:end_samp]
+        print(waterfall.shape)
         t_ref += begin_samp * tsamp
 
         #maskbool = waterfall.mask
@@ -101,14 +103,15 @@ if __name__ == '__main__':
         freq_std_guess = n_sbs * [int(512 / 4.)]
         t_std_guess = n_sbs * [2e-3 / (tsamp*tavg)]
         while True:
-            fit_mask = np.zeros(waterfall.shape, dtype=np.bool)
-            fit_start = int(time_guesses.min() - 15e-3 / (tavg * tsamp))
-            fit_end = int(time_guesses.max() + 15e-3 / (tavg * tsamp))
-            fit_mask[:, fit_start:fit_end] = True
-            fit_mask &= (~waterfall.mask)
+            #fit_mask = np.zeros(waterfall.shape, dtype=np.bool)
+            #fit_start = int(time_guesses.min() - 15e-3 / (tavg * tsamp))
+            #fit_end = int(time_guesses.max() + 15e-3 / (tavg * tsamp))
+            #fit_mask[:, fit_start:fit_end] = True
+            fit_mask = (~waterfall.mask)
+            print((~waterfall.mask).shape)
 
             amp_guesses = amp_guesses.to_numpy() / np.sqrt((~waterfall.mask[:,0]).sum())
-            print(amp_guesses)
+
             model = fitter.gen_Gauss2D_model(time_guesses, amp_guesses, f0=freq_peak_guess,
                                              bw=freq_std_guess, dt=t_std_guess)
             bestfit, fitLM = fitter.fit_Gauss2D_model(waterfall.data, timebins, freqbins, model,
@@ -155,7 +158,6 @@ if __name__ == '__main__':
         pulses.loc[pulse_id, 'Gauss Angle e'] = bestfit_errors[:, 5]
         pulses.loc[pulse_id, 't_obs / MJD'] = obs_start
         pulses.loc[pulse_id, 'f_ref / MHz'] = f_ref
-
 
         pulses.to_hdf(out_hdf5_file, 'pulses')
         print(pulses)

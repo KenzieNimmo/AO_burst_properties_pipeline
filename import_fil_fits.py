@@ -11,6 +11,7 @@ import pickle
 import matplotlib.pyplot as plt
 #import psrfits_pipe as psrfits
 from presto import psrfits
+from presto import psr_utils
 #from astropy.io import fits as astrofits
 import pandas as pd
 import sys
@@ -48,7 +49,7 @@ def filterbank_to_np(filename, dm=None, maskfile=None,
 
 
 def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None,
-               AO=False, hdf5=None, index=None, plot=False, tavg=1, t_cut=100e-3):
+               AO=False, hdf5=None, index=None, plot=False, tavg=1, subb=None, t_cut=100e-3):
     """
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
@@ -103,68 +104,63 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
             print("Please provide the hdf5 file containing the burst properties and the burst \
                   index from the search pipeline.")
 
-        # time in seconds of burst in cropped fits fileim
-        burstt = (burst_time - file_tstart)
-        peak_bin = int(burstt / (t_samp))
-
-        # begin_bin=0 #number of bins
-        # peak_subint=int(np.floor(peak_bin/sample_per_subint))
-        # end_bin=int(peak_subint+6.)*sample_per_subint
-
         spec = fits.get_spectra(0, total_N - 1)
-
     else:
         spec = fits.get_spectra(0, total_N - 1)
 
     if dm is not None:
+        # dm_const = (const.e.gauss**2/(2*pi*const.m_e*const.c)).to(u.cm**3/u.pc*u.MHz**2*u.s)
+        # f_top=fits.specinfo.hi_freq
+        # f_bottom = fits.specinfo.lo_freq
+        # freqs = spec.freqs
+        # shifts = np.round((dm_const.value*(1./(freqs)**2 - 1./(f_top)**2)*dm)/t_samp).astype(np.int)
+        # spec.shift_channels(shifts)
         spec.dedisperse(dm, padval='mean')  # ,trim=True
+        # Trim the spectrum to get rid of padded values
+        f_top=fits.specinfo.hi_freq
+        f_bottom = fits.specinfo.lo_freq
+        max_shift = int(round((psr_utils.delay_from_DM(dm, f_bottom)
+                               - psr_utils.delay_from_DM(dm, f_top)) / t_samp))
+        spec.trim(max_shift)
 
-    #arr = np.array([spec[i] for i in range(fits.specinfo.num_channels)])
     arr = spec.data
 
     if maskfile is not None:
         amaskfile = pickle.load(open(maskfile, 'rb'))
-        #amask = [int(i) for i in amaskfile]
-        #vmin = np.min(arr)
-        #arr[amask, :] = vmin - 100
-        #mask = arr < vmin - 50
         mask = np.zeros(arr.shape, dtype=np.bool)
         mask[amaskfile] = True
         arr = np.ma.masked_where(mask, arr)
-    #arr = np.flip(arr, 0)
+
     if smooth_val == 1:
         smooth_val = None
+
+    if tavg > 1:
+        nsamples = arr.shape[1]
+        if nsamples % tavg != 0:
+            print("The cutout is slightly adjusted to fit the downsample factor.")
+            arr = arr[:, : -(nsamples % tavg)]
+
+        newsamps = nsamples // tavg
+        arr = arr.reshape(arr.shape[0], newsamps, tavg).mean(axis=-1)
+        t_samp *= tavg
+    if subb:
+        print("not subbanding")
+
     if bandpass is True and offpulse is not None:
         arr = bp(arr, maskfile, offpulse, AO=AO, smooth_val=smooth_val, plot=plot)
+
     if AO is True:
-        start_samp = peak_bin - int(t_cut/2/(t_samp))
-        end_samp = peak_bin + int(t_cut/2/(t_samp))
+        print(arr.shape)
+        # time in seconds of burst in cropped fits fileim
+        burstt = (burst_time - file_tstart)
+        peak_bin = int(burstt / t_samp)
+
+        start_samp = peak_bin - int(t_cut/2/t_samp)
+        end_samp = peak_bin + int(t_cut/2/t_samp)
         arr = arr[:, start_samp : end_samp]
         # Note the number of samples before the new start is start_samp (incl the 0)
         file_tstart += start_samp*t_samp
-
-        if tavg > 1:
-            nsamples = arr.shape[1]
-            if nsamples % tavg != 0:
-                #print(f"The total number of time bins is {nsamples}, please choose an tscrunch "
-                #      "value that divides the total number of samples.")
-                #sys.exit()
-                print('The cutout is slightly adjusted to fit the downsample factor.')
-                arr = arr[:, : -(nsamples % tavg)]
-
-            newsamps = nsamples // tavg
-            #arr = np.array(np.column_stack([np.mean(subint, axis=1)
-            #                                for subint in np.hsplit(arr, newsamps)]))
-            arr = arr.reshape(arr.shape[0], newsamps, tavg).mean(axis=-1)
-
-            #arr = np.flip(arr, 0)
-            #if maskfile is not None:
-            #    vmin = np.amin(arr)
-            #    arr[amask, :] = vmin - 100
-            #    mask = arr < vmin - 50
-            #    arr = np.ma.masked_where(mask, arr)
-            #arr = np.flip(arr, 0)
-
+        print(arr.shape)
         return arr, file_tstart, arr.shape[1] // 2
     else:
         return arr

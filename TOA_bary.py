@@ -1,12 +1,12 @@
 ###requires astropy 2.0 and python3. Will not work with numpy v1.14 due to a numpy function bug###
 ###Kenzie Nimmo 2020
 
-import pandas as pd
-import numpy as np
-#import astropy
-from astropy import time, coordinates as coord, units as u, constants as const
-import argparse
 import sys
+import argparse
+import pandas as pd
+
+from math import pi
+from astropy import time, coordinates as coord, units as u, constants as const
 
 
 def get_bary(toas, source, location):
@@ -60,10 +60,10 @@ def barycorr(obs_start, burst_times, f_ref, dms, FRB='R1', telescope='Eff'):
     # mid of channel) #in MJD
     burst_time_MJD = obs_start + burst_times/(24.*3600.)
 
-    #TOA_correctDM = (TOA-dm_shift)
+    # TOA_correctDM = (TOA-dm_shift)
     TOA_bary = get_bary(burst_time_MJD, source=FRB_coord, location=telescope_coord)
 
-    dm_const = (const.e.gauss**2/(2*np.pi*const.m_e*const.c)).to(u.cm**3/u.pc*u.MHz**2*u.s)
+    dm_const = (const.e.gauss**2/(2*pi*const.m_e*const.c)).to(u.cm**3/u.pc*u.MHz**2*u.s)
 
     dm_shift = (dm_const.value*(1./(f_ref)**2)*dms)/(24.*3600.)
     return TOA_bary, TOA_bary - dm_shift
