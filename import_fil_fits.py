@@ -16,6 +16,8 @@ from presto import psr_utils
 import pandas as pd
 import sys
 
+from astropy import units as u, constants as const
+
 
 def filterbank_to_np(filename, dm=None, maskfile=None,
                      bandpass=False, offpulse=None, smooth_val=None):
@@ -43,13 +45,13 @@ def filterbank_to_np(filename, dm=None, maskfile=None,
         mask = arr < vmin - 50
         arr = np.ma.masked_where(mask, arr)
     arr = np.flip(arr, 0)
-    if bandpass is True and offpulse is not None:
-        arr = bp(filename, maskfile, nbins, offpulse, smooth_val=smooth_val)
+    #if bandpass is True and offpulse is not None:
+    #    arr = bp(filename, maskfile, nbins, offpulse, smooth_val=smooth_val)
     return arr
 
 
-def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, smooth_val=None,
-               AO=False, hdf5=None, index=None, plot=False, tavg=1, subb=None, t_cut=100e-3):
+def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None,
+               AO=False, hdf5=None, index=None, plot=False, tavg=1, t_cut=200e-3):
     """
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
@@ -109,18 +111,21 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
         spec = fits.get_spectra(0, total_N - 1)
 
     if dm is not None:
-        # dm_const = (const.e.gauss**2/(2*pi*const.m_e*const.c)).to(u.cm**3/u.pc*u.MHz**2*u.s)
-        # f_top=fits.specinfo.hi_freq
-        # f_bottom = fits.specinfo.lo_freq
-        # freqs = spec.freqs
-        # shifts = np.round((dm_const.value*(1./(freqs)**2 - 1./(f_top)**2)*dm)/t_samp).astype(np.int)
-        # spec.shift_channels(shifts)
-        spec.dedisperse(dm, padval='mean')  # ,trim=True
+        # Presto uses a dm_const rounded to four significant digits, so we calculate the shifts
+        # ourself.
+        dm_const = (const.e.gauss**2/(2*np.pi*const.m_e*const.c)).to(u.cm**3/u.pc*u.MHz**2*u.s)
+        f_top = fits.specinfo.hi_freq
+        freqs = spec.freqs
+        dm = float(dm)
+        shifts = np.round((dm_const.value*(1./(freqs)**2 - 1./(f_top)**2)*dm)/t_samp).astype(np.int)
+        spec.shift_channels(shifts)
+
+        #spec.dedisperse(dm, padval='mean')
         # Trim the spectrum to get rid of padded values
-        f_top=fits.specinfo.hi_freq
-        f_bottom = fits.specinfo.lo_freq
-        max_shift = int(round((psr_utils.delay_from_DM(dm, f_bottom)
-                               - psr_utils.delay_from_DM(dm, f_top)) / t_samp))
+        #f_bottom = fits.specinfo.lo_freq
+        #max_shift = int(round((psr_utils.delay_from_DM(dm, f_bottom)
+        #                       - psr_utils.delay_from_DM(dm, f_top)) / t_samp))
+        max_shift = shifts[-1]
         spec.trim(max_shift)
 
     arr = spec.data
@@ -137,30 +142,29 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, offpulse=None, 
     if tavg > 1:
         nsamples = arr.shape[1]
         if nsamples % tavg != 0:
-            print("The cutout is slightly adjusted to fit the downsample factor.")
+            #print("The cutout is slightly adjusted to fit the downsample factor.")
             arr = arr[:, : -(nsamples % tavg)]
 
         newsamps = nsamples // tavg
         arr = arr.reshape(arr.shape[0], newsamps, tavg).mean(axis=-1)
         t_samp *= tavg
-    if subb:
-        print("not subbanding")
-
-    if bandpass is True and offpulse is not None:
-        arr = bp(arr, maskfile, offpulse, AO=AO, smooth_val=smooth_val, plot=plot)
 
     if AO is True:
-        print(arr.shape)
         # time in seconds of burst in cropped fits fileim
         burstt = (burst_time - file_tstart)
         peak_bin = int(burstt / t_samp)
 
-        start_samp = peak_bin - int(t_cut/2/t_samp)
-        end_samp = peak_bin + int(t_cut/2/t_samp)
+        # Make the cutout devidable by 16 to avoid conflicts when downsampling later, this assumes
+        # a downsampling factor of a power of 2.
+        samp_cut = t_cut/2/t_samp
+        samp_cut -= samp_cut % (8//tavg)
+
+        # Cut the data around the peak
+        start_samp = peak_bin - int(samp_cut)
+        end_samp = peak_bin + int(samp_cut)
         arr = arr[:, start_samp : end_samp]
         # Note the number of samples before the new start is start_samp (incl the 0)
         file_tstart += start_samp*t_samp
-        print(arr.shape)
         return arr, file_tstart, arr.shape[1] // 2
     else:
         return arr
@@ -213,7 +217,7 @@ def smooth(x, window_len=11, window='hanning'):
     return y
 
 
-def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
+def bandpass_calibration(arr, offpulsefile, tavg=1, AO=False, smooth_val=None, plot=False):
     """
     Uses off pulse data (identified using interactive RFI_zapper.py) to normalise the spectrum and
     calibrate the bandpass
@@ -224,6 +228,10 @@ def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
             sys.exit()
 
     offpulse = pickle.load(open(offpulsefile, 'rb'))
+    if tavg != 1:
+        # Transform the offtimes into the downsampled shape.
+        offlen = offpulse.shape[0]
+        offpulse = offpulse.reshape(offlen//tavg, tavg).all(axis=1)
     #offpulse = [int(x) for x in offpulse]
     spec = np.mean(arr[:, offpulse], axis=1)
     chan_std = np.std(arr[:, offpulse], axis=1)
@@ -239,7 +247,7 @@ def bp(arr, maskfile, offpulsefile, AO=False, smooth_val=None, plot=False):
     if smooth_val is not None:
         print("Caution: smoothing is not currently implemented.")
         print("Not smoothing the bandpass")
-        a = int((smooth_val - 1) / 2.)
+        #a = int((smooth_val - 1) / 2.)
         #spec = np.ma.masked_where(mask==True,spec)
         #spec = smooth(spec,window_len=smooth_val)[a-1:-(a+1)]
         #spec = np.ma.masked_where(mask==True,spec)
