@@ -9,14 +9,24 @@
 #####
 
 import numpy as np
-import matplotlib.pyplot as py
+import matplotlib.pyplot as plt
 
 #import psr_utils as pau
 
-from astropy.modeling import models, fitting
+from astropy.modeling import models, fitting, custom_model
 #from astropy.convolution import Gaussian1DKernel, Box1DKernel, convolve
-
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
+
+
+@custom_model
+def drifting_2DGaussian(t, f, amplitude=1, t_mean=0, f_mean=1400,
+                        t_stddev=3, f_stddev=200, drift=0.):
+    """A 2D drifting Gaussian"""
+    g = amplitude * np.exp( - ((t-t_mean-(f-f_mean)*drift)/t_stddev)**2/2
+                            - ((f-f_mean)/f_stddev)**2/2)
+
+    return g
+
 
 def gen_Gauss2D_model(peak_bins, peak_amps, f0=None, bw=None, dt=None):
     '''
@@ -91,6 +101,15 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
         bunc = np.zeros_like(bparams)
     else:
         bunc = np.sqrt(np.diag(cov_mat))
+        corr=np.array(cov_mat)
+        corr/=bunc
+        corr=corr.T/bunc
+        plt.imshow(corr)
+        plt.colorbar()
+        plt.title('Correlation matrix')
+        plt.xticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
+        plt.yticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
+        plt.show()
 
     bunc.shape=((npks,6))
 
@@ -103,7 +122,7 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
             print("F Loc: %.2f +/- %.2f" % (bparams[ii, 2], bunc[ii,2]))
             print("T Wid: %.2f +/- %.2f" % (bparams[ii, 3], bunc[ii,3]))
             print("F Wid: %.2f +/- %.2f" % (bparams[ii, 4], bunc[ii,4]))
-            print("Angle: %.2f +/- %.2f" % (bparams[ii, 5], bunc[ii,5]))
+            print("Angle: %f +/- %f" % (bparams[ii, 5], bunc[ii,5]))
             print("")
 
     return bparams, bunc
@@ -133,7 +152,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
 
     #Convert to SNR units
     #inds,dstd,dmean=plsr.threshold(tseries, 4.0)
-    dmedian = np.median(tseries)
+    dmedian = np.median(tseries.data)
     dstd = np.std(tseries)
     tseries=(tseries-dmedian)/dstd
 
@@ -142,7 +161,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
         vlim=(np.min(data), np.max(data))
 
     #Create figure instance, add axes and turn off labels
-    fig=py.figure(figsize=(12,9))
+    fig=plt.figure(figsize=(12,9))
 
     ax1 = fig.add_axes([0.1, 0.1, 0.6, 0.6])
     ax2 = fig.add_axes([0.1, 0.7, 0.6, 0.2], sharex=ax1)
@@ -155,7 +174,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
     T,F=np.meshgrid(xarr,yarr)
 
     #Plot data
-    ax1.pcolormesh(T,F,data, vmin=vlim[0], vmax=vlim[1])
+    ax1.pcolormesh(T, F, data.filled(0), vmin=vlim[0], vmax=vlim[1])
     ax2.plot(xarr, tseries, 'y-')
     ax3.step(bandpass, yarr, 'y-')
 
@@ -175,7 +194,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
 
     #Set axis ranges
     ax1.set_xlim((min(xarr), max(xarr)))
-    ax1.set_ylim((max(yarr), min(yarr)))
+    ax1.set_ylim((min(yarr), max(yarr)))
 
     return fig
 
@@ -197,12 +216,10 @@ def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=Fal
 
     #Add contours
     ax=fig.get_axes()
-    ax[0].contour(T,F,best_gauss(T,F), ncontour, colors='w')
-    py.show()
+    ax[0].contour(T,F,best_gauss(T,F), ncontour, colors='w', linewidths=.5)
 
     #If requested, make the residual dynamic spectrum plot
     if res_plot:
-        res_fig=dynspec_3pan(stimes, freqs, data-best_gauss(T,F))
-        py.show()
+        res_fig = dynspec_3pan(stimes, freqs, data-best_gauss(T,F))
+    return fig, res_fig
 
-    return
