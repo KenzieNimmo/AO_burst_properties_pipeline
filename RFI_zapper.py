@@ -85,7 +85,7 @@ class identify_bursts(object):
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         indices = np.array(self.peak_times).argsort()
-        self.peak_times = list(np.array(self.peak_times)[indices])
+        self.peak_times = list(np.array(self.peak_times)[indices])  # I guess this is too late
         self.peak_amps = list(np.array(self.peak_amps)[indices])
 
     def onpress(self, event):
@@ -435,11 +435,6 @@ if __name__ == '__main__':
     #pulses_txt = 'pulse_nos.txt'
     in_hdf5_file = f'{basename}.hdf5'
 
-    if options.mask is not None:
-        initial_mask = options.mask
-    else:
-        initial_mask = None
-
     pulses_hdf5 = pd.read_hdf(in_hdf5_file, 'pulses')
     pulses_hdf5 = pulses_hdf5.loc[pulses_hdf5['Pulse'] == 0].sort_values('Sigma', ascending=False)
 
@@ -503,6 +498,15 @@ if __name__ == '__main__':
             print(f'File {filename} does not exist.')
             os.chdir('..')
             continue
+
+        if options.mask is not None:
+            initial_mask = options.mask
+        elif os.path.isfile(f'{basename}_{pulse_id}_mask.pkl'):
+            initial_mask = f'{basename}_{pulse_id}_mask.pkl'
+        elif os.path.isfile('../mask.pkl'):
+            initial_mask = '../mask.pkl'
+        else:
+            initial_mask = None
 
         #total_N=fits.specinfo.N / tavg
         t_samp = fits.specinfo.dt
