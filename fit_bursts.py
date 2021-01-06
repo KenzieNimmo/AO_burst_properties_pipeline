@@ -43,7 +43,7 @@ if __name__ == '__main__':
                            "given after -t.")
     parser.add_option('-s', '--subb', type='int', default=1,
                       help="If -s option is used, subbanding is applied using the factor "
-                           "given after -t.")
+                           "given after -s.")
     parser.add_option('-p', '--pulse', type='str', default=None,
                       help="Give a pulse id to process only this pulse.")
     parser.add_option('-f', '--tfit', dest='tfit', type='float', default=5,
@@ -133,12 +133,14 @@ if __name__ == '__main__':
         fit_mask[:, fit_start:fit_end] = True
         fit_mask = (fit_mask & ~waterfall.mask).astype(np.float)
 
+        freqs = fits.freqs #[~waterfall.mask[:,0]]
+
         if subb != 1:
             waterfall = ds(waterfall, factor=subb, axis=0)
             fit_mask = ds(fit_mask, factor=subb, axis=0)
+            freqs = ds(freqs, factor=subb, axis=0)
 
         times = np.arange(waterfall.shape[1]) * tsamp * tavg * 1e3  # in ms
-        freqs = fits.freqs #[~waterfall.mask[:,0]]
 
         #waterfall = waterfall.data[~waterfall.mask[:,0]] # maskbool
         # For savings
@@ -269,6 +271,8 @@ if __name__ == '__main__':
         os.chdir('..')
 
         if answer == 'skip':
+            # Save the guesses anyway
+            pulses.to_hdf(out_hdf5_file, 'pulses')
             continue
 
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Amp')] = bestfit_params[:, 0]
