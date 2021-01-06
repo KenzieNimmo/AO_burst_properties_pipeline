@@ -76,7 +76,7 @@ def fit_Gauss2D_model(data, tdum, fdum, g_guess, weights=None):
     xdum, ydum = np.meshgrid(tdum, fdum)
 
     fit_LM = fitting.LevMarLSQFitter()
-    fit_2dG = fit_LM(g_guess, xdum, ydum, data, weights=weights)
+    fit_2dG = fit_LM(g_guess, xdum, ydum, data, weights=weights, maxiter=500)
 
     return fit_2dG, fit_LM
 
@@ -100,16 +100,16 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
         print(fitter.fit_info['message'])
         bunc = np.zeros_like(bparams)
     else:
+        print(f"The fit converged after {fitter.fit_info['nfev']} iterations")
         bunc = np.sqrt(np.diag(cov_mat))
         corr=np.array(cov_mat)
         corr/=bunc
         corr=corr.T/bunc
-        plt.imshow(corr)
+        fig3 = plt.imshow(corr)
         plt.colorbar()
         plt.title('Correlation matrix')
         plt.xticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
         plt.yticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
-        plt.show()
 
     bunc.shape=((npks,6))
 
