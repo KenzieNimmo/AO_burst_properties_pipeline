@@ -153,7 +153,7 @@ if __name__ == '__main__':
         time_guesses *= tavg*tsamp*1e3
 
         n_sbs = pulses.loc[pulse_id].shape[0]
-        freq_peak_guess = [freqs[212]] * n_sbs  # n_sbs * [int(512 / subb / 2.)]
+        freq_peak_guess = [freqs[freqs.shape[0]*2//5]] * n_sbs  # n_sbs * [int(512 / subb / 2.)]
         freq_std_guess = [100.] * n_sbs  # n_sbs * [int(512 / subb / 4.)]
         t_std_guess = [1] * n_sbs
         amp_guesses = 10*amp_guesses.to_numpy() #/ np.sqrt((~waterfall.mask[:,0]).sum())
