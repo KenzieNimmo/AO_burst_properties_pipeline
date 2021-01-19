@@ -154,7 +154,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None
         burstt = (burst_time - file_tstart)
         peak_bin = int(burstt / t_samp)
 
-        # Make the cutout devidable by 16 to avoid conflicts when downsampling later, this assumes
+        # Make the cutout devidable by 64 to avoid conflicts when downsampling later, this assumes
         # a downsampling factor of a power of 2.
         samp_cut = t_cut/2/t_samp
         samp_cut -= samp_cut % (32//tavg)
