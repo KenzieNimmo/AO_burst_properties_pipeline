@@ -28,7 +28,7 @@ def drifting_2DGaussian(t, f, amplitude=1, t_mean=0, f_mean=1400,
     return g
 
 
-def gen_Gauss2D_model(peak_bins, peak_amps, f0=None, bw=None, dt=None):
+def gen_Gauss2D_model(peak_bins, peak_amps, f0=None, bw=None, dt=None, verbose=False):
     '''
     Generates a 2D Gaussian astropy model for LSQ fitting.
     The number of Gaussians included in the model is infered from the length of peak_bins.
@@ -59,6 +59,13 @@ def gen_Gauss2D_model(peak_bins, peak_amps, f0=None, bw=None, dt=None):
         else:
             g_guess += models.Gaussian2D(peak_amps[ii], x_mean=peak_bins[ii], y_mean=f0[ii],
                                          x_stddev=dt[ii], y_stddev=bw[ii], theta=0.0)
+
+    if verbose:
+        for ii in range(npeaks):
+            print("**Init. guess sub burst %d**" % ii)
+            print("Amp: %.2f \tTloc: %.2f \tFloc: %.2f \tTwid %.2f \tFwid %.2f Angle: 0" % \
+                   (peak_amps[ii], peak_bins[ii], f0[ii], dt[ii], bw[ii]))
+
     return g_guess
 
 def fit_Gauss2D_model(data, tdum, fdum, g_guess, weights=None):
@@ -215,17 +222,26 @@ def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=Fal
     ncontour = number of contour lines to plot (default 8)
     res_plot = if True, a residual plot will also be made (default False)
     '''
+    fig_list = []
     T,F=np.meshgrid(stimes, freqs)
 
     #Make standard 3-panel dynamic spectrum plot
     fig=dynspec_3pan(stimes, freqs, data, vlines=vlines)
 
     #Add contours
-    ax=fig.get_axes()
+    ax = fig.get_axes()
     ax[0].contour(T,F,best_gauss(T,F), ncontour, colors='w', linewidths=.5)
+    ax[1].set_title("Data + Fit")
+
+    fig_list.append(fig)
 
     #If requested, make the residual dynamic spectrum plot
     if res_plot:
         res_fig = dynspec_3pan(stimes, freqs, data-best_gauss(T,F), vlines=vlines)
-    return fig, res_fig
+        ax = res_fig.get_axes()
+        ax[1].set_title("Fit residuals")
+
+        fig_list.append(res_fig)
+
+    return fig_list
 

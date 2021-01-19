@@ -155,8 +155,8 @@ if __name__ == '__main__':
         time_guesses -= begin_samp
         time_guesses *= tavg*tsamp*1e3
 
-        #freq_peak_guess = freqs[freq_peak_guess]  # n_sbs * [int(512 / subb / 2.)]
         n_sbs = pulses.loc[pulse_id].shape[0]
+        #freq_peak_guess = [freqs[freqs.shape[0]*2//5]] * n_sbs  # n_sbs * [int(512 / subb / 2.)]
         freq_std_guess = [100.] * n_sbs  # n_sbs * [int(512 / subb / 4.)]
         t_std_guess = [1] * n_sbs
         amp_guesses = np.sqrt(tavg*subb) * amp_guesses.to_numpy() #/ np.sqrt((~waterfall.mask[:,0]).sum())
@@ -171,14 +171,16 @@ if __name__ == '__main__':
         fix_angle = False
         while True:
             if use_standard_2D_gaussian:
+                print("Using standard Gaussian model")
                 model = fitter.gen_Gauss2D_model(time_guesses, amp_guesses, f0=freq_peak_guess,
-                                                 bw=freq_std_guess, dt=t_std_guess)
+                                                 bw=freq_std_guess, dt=t_std_guess, verbose=True)
                 if fix_angle:
                     angles = model.param_names[5::6]
                     for a in angles:
                         model.fixed[a] = True
             else:
                 # Use the custom drifting Gaussian model.
+                print("Using drifting Gaussian model")
                 model = fitter.drifting_2DGaussian(
                     amplitude=amp_guesses[0], t_mean=time_guesses[0], f_mean=freq_peak_guess[0],
                     t_stddev=t_std_guess[0], f_stddev=freq_std_guess[0], drift=0.)

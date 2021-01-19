@@ -157,7 +157,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None
         # Make the cutout devidable by 16 to avoid conflicts when downsampling later, this assumes
         # a downsampling factor of a power of 2.
         samp_cut = t_cut/2/t_samp
-        samp_cut -= samp_cut % (8//tavg)
+        samp_cut -= samp_cut % (32//tavg)
 
         # Cut the data around the peak
         start_samp = peak_bin - int(samp_cut)
