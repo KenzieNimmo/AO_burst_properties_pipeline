@@ -95,6 +95,7 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
 
     # Pull out uncertainties
     cov_mat = fitter.fit_info['param_cov']
+    fig = plt.figure(figsize=(6,5))
     if cov_mat is None:
         print("No covariance matrix was returned, try again. The fit_info['message'] is")
         print(fitter.fit_info['message'])
@@ -105,7 +106,6 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
         corr=np.array(cov_mat)
         corr/=bunc
         corr=corr.T/bunc
-        fig = plt.figure(figsize=(6,5))
         plt.imshow(corr)
         plt.colorbar()
         plt.title('Correlation matrix')
