@@ -4,7 +4,7 @@ Kenzie Nimmo 2020
 import sys
 import numpy as np
 # sys.path.append('/home/nimmo/AO_burst_properties_pipeline/')
-sys.path.append('/home/jjahns/Bursts/AO_burst_properties_pipeline/')
+#sys.path.append('/home/jjahns/Bursts/AO_burst_properties_pipeline/')
 import os
 import optparse
 import pandas as pd
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import import_fil_fits
 import burst_2d_Gaussian as fitter
 
+from scipy.stats import chisquare
 from presto import psrfits
 
 
@@ -84,7 +85,6 @@ if __name__ == '__main__':
     smooth = None  # smoothing value used for bandpass calibration
 
     pulses = pd.read_hdf(in_hdf5_file, 'pulses')
-    print(pulses)
 
     # Get pulses to be processed.
     if options.pulse is not None:
@@ -94,6 +94,7 @@ if __name__ == '__main__':
         if ('2D Gaussian', 'Amp') in pulses.columns:
             not_processed = pulses.loc[(slice(None), 'sb1'), ('2D Gaussian', 'Amp')].isna()
             pulse_ids = pulse_ids[not_processed]
+    print(pulses.loc[pulse_ids])
 
     for pulse_id in pulse_ids:
         print("2D Gaussian fit of observation %s, pulse ID %s" % (basename, pulse_id))
@@ -113,6 +114,7 @@ if __name__ == '__main__':
         dm = pulses.loc[(pulse_id, 'sb1'), ('General','DM')]
         amp_guesses = pulses.loc[pulse_id, ('Guesses', 'Amp')]
         time_guesses = pulses.loc[pulse_id, ('Guesses', 't_cent')] / tavg
+        freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')] // subb
 
         # Define the window to be shown.
         begin_samp = int(time_guesses.min() - 20e-3 / (tavg * tsamp))
@@ -141,6 +143,7 @@ if __name__ == '__main__':
             freqs = ds(freqs, factor=subb, axis=0)
 
         times = np.arange(waterfall.shape[1]) * tsamp * tavg * 1e3  # in ms
+        start_stop = times[[fit_start, fit_end]]
 
         #waterfall = waterfall.data[~waterfall.mask[:,0]] # maskbool
         # For savings
@@ -152,19 +155,17 @@ if __name__ == '__main__':
         time_guesses -= begin_samp
         time_guesses *= tavg*tsamp*1e3
 
+        #freq_peak_guess = freqs[freq_peak_guess]  # n_sbs * [int(512 / subb / 2.)]
         n_sbs = pulses.loc[pulse_id].shape[0]
-        freq_peak_guess = [freqs[freqs.shape[0]*2//5]] * n_sbs  # n_sbs * [int(512 / subb / 2.)]
         freq_std_guess = [100.] * n_sbs  # n_sbs * [int(512 / subb / 4.)]
         t_std_guess = [1] * n_sbs
-        amp_guesses = 10*amp_guesses.to_numpy() #/ np.sqrt((~waterfall.mask[:,0]).sum())
+        amp_guesses = np.sqrt(tavg*subb) * amp_guesses.to_numpy() #/ np.sqrt((~waterfall.mask[:,0]).sum())
 
         # Load guesses from hdf5 file if they are saved there and use those instead
         if ('Guesses', 't_std') in pulses.columns:
             if not pulses.loc[pulse_id, ('Guesses', 't_std')].isna().loc['sb1']:
                 t_std_guess = pulses.loc[pulse_id, ('Guesses', 't_std')].to_numpy()
-                freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')].to_numpy()
                 freq_std_guess = pulses.loc[pulse_id, ('Guesses', 'f_std')].to_numpy()
-                amp_guesses = pulses.loc[pulse_id, ('Guesses', 'Amp')].to_numpy()
 
         use_standard_2D_gaussian = True
         fix_angle = False
@@ -195,18 +196,27 @@ if __name__ == '__main__':
             if plot_guess:
                 low_res_waterfaller = ds(ds(waterfall, psubb), ptavg, axis=1)
                 fitter.plot_burst_windows(ds(times, ptavg), ds(freqs, psubb), low_res_waterfaller,
-                                          model, ncontour=8, res_plot=True)
+                                          model, ncontour=8, res_plot=True, vlines=start_stop)
 
             bestfit, fitLM = fitter.fit_Gauss2D_model(waterfall.data, times, freqs, model,
                                                       weights=fit_mask)
-            bestfit_params, bestfit_errors = fitter.report_Gauss_parameters(bestfit, fitLM,
-                                                                            verbose=True)
+            bestfit_params, bestfit_errors, corr_fig = fitter.report_Gauss_parameters(bestfit,
+                                                                                      fitLM,
+                                                                                      verbose=True)
+
+            timesh, freqs_m = np.meshgrid(times, freqs)
+            fit_mask = fit_mask.astype(np.bool)
+            timesh, freqs_m = timesh[fit_mask], freqs_m[fit_mask]
+            chisq, pvalue = chisquare(waterfall[fit_mask], f_exp=bestfit(timesh, freqs_m),
+                                      ddof=6*n_sbs, axis=None)
+            print("Chi^2 and p-value:", chisq, pvalue)
             # Plot downsampled and subbanded as given in options
             low_res_waterfaller = ds(ds(waterfall, psubb), ptavg, axis=1)
             fig, res_fig = fitter.plot_burst_windows(ds(times, ptavg), ds(freqs, psubb),
                                                      low_res_waterfaller, bestfit, ncontour=8,
-                                                     res_plot=True)  # diagnostic plots
+                                                     res_plot=True, vlines=start_stop)  # diagnostic plots
             if use_standard_2D_gaussian:
+                corr_fig.savefig(f'{basename}_{pulse_id}_correlation')
                 fig.savefig(f'{basename}_{pulse_id}_fit')
                 res_fig.savefig(f'{basename}_{pulse_id}_fit_residuals')
             plt.show()
@@ -233,6 +243,8 @@ if __name__ == '__main__':
                                                                           * fsamp * subb)
                 pulses.loc[pulse_id, ('2D Gaussian', 'Angle')] = bestfit_params[:, 5]
                 pulses.loc[pulse_id, ('2D Gaussian', 'Angle e')] = bestfit_errors[:, 5]
+                pulses.loc[pulse_id, ('2D Gaussian', 'Chi^2')] = chisq
+                pulses.loc[pulse_id, ('2D Gaussian', 'p-value')] = pvalue
 
             elif (answer == 'y') or (answer == 'skip'):
                 break
@@ -244,27 +256,39 @@ if __name__ == '__main__':
                     print("The angle is a fittable parameter again.")
             elif answer == 'n':
                 guessvals = []
-                while (len(guessvals) != n_sbs*3) and (len(guessvals) != n_sbs*4):
+                while len(guessvals) not in [n_sbs*i for i in range(1, 5)]:
+                    current_gusses = np.concatenate((t_std_guess, freq_std_guess, amp_guesses,
+                                                     freq_peak_guess))
+                    current_gusses = str(list(current_gusses))[1:-1].replace(' ', '')
                     secondanswer = input("Give the intial guesses in ms and MHz in the"
-                                         "form t_std_sb1,t_std_sb2,...,f_peak_sb1,...,f_std_sb1,"
-                                         f"...[amp_sb1,amp_sb2,...] with {n_sbs*3} guesses in "
-                                         "total: ")
+                                         "form t_std_sb1,t_std_sb2,...,[f_std_sb1,"
+                                         "...[amp_sb1,amp_sb2,...,[f_peak_sb1,...,[t_peak_sb1,...]]]] "
+                                         f"with a multiple of {n_sbs} guesses in "
+                                         f"total. The current values are {current_gusses}: ")
                     try:
                         guessvals = [float(x.strip()) for x in secondanswer.split(',')]
                     except:
                         print("Wrong format")
-                t_std_guess = guessvals[0 : n_sbs]
-                freq_peak_guess = guessvals[n_sbs : 2*n_sbs]
-                freq_std_guess = guessvals[2*n_sbs:3*n_sbs]
 
                 # Save guesses.
+                guessvals = np.array(guessvals)
+                t_std_guess = guessvals[0 : n_sbs]
                 pulses.loc[pulse_id, ('Guesses', 't_std')] = t_std_guess
-                pulses.loc[pulse_id, ('Guesses', 'f_cent')] = freq_peak_guess
-                pulses.loc[pulse_id, ('Guesses', 'f_std')] = freq_std_guess
-
-                if len(guessvals) == n_sbs*4:
-                    amp_guesses = guessvals[3*n_sbs:4*n_sbs]
-                    pulses.loc[pulse_id, ('Guesses', 'Amp')] = amp_guesses
+                if len(guessvals) > n_sbs:
+                    freq_std_guess = guessvals[n_sbs : 2*n_sbs]
+                    pulses.loc[pulse_id, ('Guesses', 'f_std')] = freq_std_guess
+                    if len(guessvals) > 2*n_sbs:
+                        amp_guesses = guessvals[2*n_sbs:3*n_sbs]
+                        pulses.loc[pulse_id, ('Guesses', 'Amp')] = (np.array(amp_guesses)
+                                                                    / np.sqrt(tavg*subb))
+                        if len(guessvals) > 3*n_sbs:
+                            freq_peak_guess = guessvals[3*n_sbs:4*n_sbs]
+                            pulses.loc[pulse_id, ('Guesses', 'f_cent')] = freq_peak_guess
+# =============================================================================
+#                             if len(guessvals) > 4*n_sbs:
+#                                 time_guesses = guessvals[4*n_sbs:5*n_sbs]
+#                                 pulses.loc[pulse_id, ('Guesses', 't_cent')] = time_guesses / tavg
+# =============================================================================
             else:
                 print("Please provide an answer y or n.")
 
@@ -292,9 +316,12 @@ if __name__ == '__main__':
             bestfit_errors[:, 4] * fsamp * subb)
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Drift / ms/MHz')] = bestfit_params[:, 5]
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Drift e / ms/MHz')] = bestfit_errors[:, 5]
+        pulses.loc[pulse_id, ('Drifting Gaussian', 'Chi^2')] = chisq
+        pulses.loc[pulse_id, ('Drifting Gaussian', 'p-value')] = pvalue
         pulses.loc[pulse_id, ('General', 't_obs / MJD')] = obs_start
         pulses.loc[pulse_id, ('General', 'f_ref / MHz')] = f_ref
         pulses.loc[pulse_id, ('General', 'downsampling')] = tavg
+        pulses.loc[pulse_id, ('General', 'subbanding')] = subb
 
         pulses.to_hdf(out_hdf5_file, 'pulses')
         print(pulses)
