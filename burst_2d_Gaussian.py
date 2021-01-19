@@ -105,7 +105,8 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
         corr=np.array(cov_mat)
         corr/=bunc
         corr=corr.T/bunc
-        fig3 = plt.imshow(corr)
+        fig = plt.figure(figsize=(6,5))
+        plt.imshow(corr)
         plt.colorbar()
         plt.title('Correlation matrix')
         plt.xticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
@@ -125,9 +126,10 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
             print("Angle: %f +/- %f" % (bparams[ii, 5], bunc[ii,5]))
             print("")
 
-    return bparams, bunc
+    return bparams, bunc, fig
 
-def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), title=''):
+def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), title='',
+                 vlines=[]):
     '''Method to produce the three panel
     dynamic spectrum plot. The main panel
     is a pcolormesh figure of data with
@@ -178,6 +180,10 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
     ax2.plot(xarr, tseries, 'y-')
     ax3.step(bandpass, yarr, 'y-')
 
+    # Indicate which data is used for the fit
+    for line in vlines:
+        ax2.axvline(line)
+
     #Add labels to axes and title
     ax1.set_xlabel('$\\rm Time\; (ms)$', size=tsize)
     ax1.set_ylabel('$\\rm Frequency\; (MHz)$', size=tsize)
@@ -198,7 +204,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
 
     return fig
 
-def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=False):
+def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=False, vlines=[]):
     '''Generates the usual dynamic spectrum plot using dynspec_3pan
     with the contours from the best-fit 2D Gaussian model overplotted
     Input parameters:
@@ -212,7 +218,7 @@ def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=Fal
     T,F=np.meshgrid(stimes, freqs)
 
     #Make standard 3-panel dynamic spectrum plot
-    fig=dynspec_3pan(stimes, freqs, data)
+    fig=dynspec_3pan(stimes, freqs, data, vlines=vlines)
 
     #Add contours
     ax=fig.get_axes()
@@ -220,6 +226,6 @@ def plot_burst_windows(stimes, freqs, data, best_gauss, ncontour=8, res_plot=Fal
 
     #If requested, make the residual dynamic spectrum plot
     if res_plot:
-        res_fig = dynspec_3pan(stimes, freqs, data-best_gauss(T,F))
+        res_fig = dynspec_3pan(stimes, freqs, data-best_gauss(T,F), vlines=vlines)
     return fig, res_fig
 
