@@ -1,7 +1,7 @@
 """
 FOR ARECIBO FRB121102 ANALYSIS
 
-Interactive RFI masker using the filterbank file, and outputs the masked array that can be read
+Interactive RFI masker using the fits file, and outputs the masked array that can be read
 into other python scripts. Also does the bandpass correction using import_fil_fits.
 Kenzie Nimmo 2020
 """
@@ -13,7 +13,6 @@ import import_fil_fits
 #from pylab import *
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
-from presto import filterbank
 import pickle
 import os
 #import re
@@ -33,55 +32,38 @@ def find_nearest(array, value):
 
 
 class identify_bursts(object):
-    def __init__(self, filename, gs, tavg, dm, in_hdf5_file, pulseindex, maskfile, offpulsefile):
+    def __init__(self, arr, tsamp, peak_bin):
+        rows = 2
+        cols = 2
+        gs = gridspec.GridSpec(rows, cols, wspace=0., hspace=0.,
+                               height_ratios=[0.5,]*(rows-1) + [2,],
+                               width_ratios=[5,] + [1,]*(cols-1))
         self.peak_times = []
+        self.peak_freqs = []
         self.peak_amps = []
-
-        ax1 = plt.subplot(gs[0])  # profile
-        self.axes = ax1
-        self.canvas = ax1.figure.canvas
-
-        if filename.endswith(".fits"):
-            fits = psrfits.PsrfitsFile(filename)
-            tsamp = fits.specinfo.dt
-            self.arr, startt, peak_bin = import_fil_fits.fits_to_np(
-                filename, dm=dm, maskfile=maskfile, AO=True,
-                hdf5=in_hdf5_file, index=pulseindex, plot=False, tavg=tavg
-                )
-            self.peak_bin = peak_bin
-            self.tsamp = tsamp
-
-        arr = self.arr
+        fig = plt.figure(figsize=(16, 10))
+        ax_data = plt.subplot(gs[2])  # dynamic spectrum
+        ax_ts = plt.subplot(gs[0], sharex=ax_data)  # time series
+        ax_spec = plt.subplot(gs[-1], sharey=ax_data)  # spectrum
+        self.ax_data = ax_data
+        self.canvas = ax_data.figure.canvas
         profile = np.sum(arr, axis=0)
-
-        # offpulse times
-        with open(offpulsefile, 'rb') as f:
-            offtimes = pickle.load(f)
-        if tavg != 1:
-            # Transform the offtimes into the downsampled shape.
-            offlen = offtimes.shape[0]
-            offtimes = offtimes.reshape(offlen//tavg, tavg).all(axis=1)
-
-        offprof = profile[offtimes]
-        # convert to S/N
-        profile -= np.mean(offprof)
-        offprof -= np.mean(offprof)
-        profile /= np.std(offprof)
-
-        # convert arr to S/N
-        offarr = arr[:, offtimes]
-        arr -= np.mean(offarr)
-        offarr -= np.mean(offarr)
-        arr /= np.std(offarr)
+        spectrum = np.sum(arr, axis=1)
 
         self.arr = arr
 
-        self.ax1plot, = ax1.plot(profile, 'k-', alpha=1.0, zorder=1)
+        ax_ts.plot(profile, 'k-', alpha=1.0)
         y_range = profile.max() - profile.min()
-        ax1.set_ylim(profile.min() - y_range * 0.15, profile.max() + y_range * 0.1)
-        ax1.axvline((peak_bin) - (5e-3 / (tavg * tsamp)), color='r', linestyle='--')
-        ax1.axvline((peak_bin) + (5e-3 / (tavg * tsamp)), color='r', linestyle='--')
-        fig.add_subplot(ax1)
+        ax_ts.set_ylim(profile.min() - y_range * 0.15, profile.max() + y_range * 0.1)
+        ax_ts.axvline(peak_bin - (5e-3 / tsamp), color='r', linestyle='--')
+        ax_ts.axvline(peak_bin + (5e-3 / tsamp), color='r', linestyle='--')
+        #fig.add_subplot(ax1)
+        ax_spec.step(spectrum, np.arange(spectrum.shape[0]), 'k-')
+        y_range = spectrum.max() - spectrum.min()
+        ax_spec.set_xlim(spectrum.min() - y_range * 0.15, spectrum.max() + y_range * 0.1)
+
+        ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(), origin='upper', aspect='auto')
+        #ax_data.imshow(arr)
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         indices = np.array(self.peak_times).argsort()
@@ -91,18 +73,19 @@ class identify_bursts(object):
     def onpress(self, event):
         tb = plt.get_current_fig_manager().toolbar
         if tb.mode == '':
-            y1 = event.ydata
+            y1 = int(round(event.ydata))
             x1 = event.xdata
             self.peak_times.append(x1)
-            maxval = np.max(self.arr[:, int(x1)])
-            meanval = np.mean(self.arr[:, int(x1)])
-            self.peak_amps.append(meanval)  #maxval
-            self.axes.scatter(x1, y1, lw=3, color='r', marker='x', s=100, zorder=10)
+            self.peak_freqs.append(y1)
+            #maxval = np.max(self.arr[:, int(x1)])
+            meanval = np.mean(self.arr[y1-3:y1+3, int(x1)-3:int(x1)+3])
+            self.peak_amps.append(meanval)  # correct for downsampling
+            self.ax_data.scatter(x1, y1, lw=1, color='r', marker='x', s=100, zorder=10)
             plt.draw()
 
 
 class offpulse(object):
-    def __init__(self, filename, gs, dm, AO, in_hdf5_file, pulseindex, tavg, initial_mask=None):
+    def __init__(self, arr, gs, tsamp, peak_bin, initial_mask=None):
         self.begin_times = []
         self.end_times = []
         self.lines = {}
@@ -119,22 +102,6 @@ class offpulse(object):
 
         self.canvas = ax2.figure.canvas
 
-        if filename.endswith(".fits"):
-            fits = psrfits.PsrfitsFile(filename)
-            tsamp = fits.specinfo.dt
-            #if initial_mask is None:
-            #    arr, startt, peak_bin = import_fil_fits.fits_to_np(filename, dm=dm, maskfile=None,
-            #                                                       bandpass=False, offpulse=None,
-            #                                                       AO=True, hdf5=in_hdf5_file,
-            #                                                       index=pulseindex, tavg=tavg)
-            #else:
-            arr, startt, peak_bin = import_fil_fits.fits_to_np(
-                filename, dm=dm, maskfile=initial_mask,
-                AO=True, hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
-                )
-            self.peak_bin = peak_bin
-            self.tsamp = tsamp
-
         profile = np.mean(arr, axis=0)
 
         self.ax2plot, = ax2.plot(profile, 'k-', alpha=1.0, zorder=1)
@@ -144,8 +111,8 @@ class offpulse(object):
         ax2.set_ylim(profile.min() - y_range * 0.15, profile.max() + y_range * 0.1)
         ax2.tick_params(labelbottom=False, labeltop=False, labelleft=False,
                         labelright=False, bottom=True, top=True, left=True, right=True)
-        ax2.axvline((peak_bin) - (5e-3 / (tavg * tsamp)), color='r', linestyle='--')
-        ax2.axvline((peak_bin) + (5e-3 / (tavg * tsamp)), color='r', linestyle='--')
+        ax2.axvline(peak_bin - (5e-3 / tsamp), color='r', linestyle='--')
+        ax2.axvline(peak_bin + (5e-3 / tsamp), color='r', linestyle='--')
         fig.add_subplot(ax2)
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
@@ -205,8 +172,7 @@ class offpulse(object):
 
 
 class RFI(object):
-    def __init__(self, filename, gs, prof, ds, spec, stat, ithres, ax2, dm, AO,
-                 in_hdf5_file, pulseindex, favg, tavg, initial_mask=None):
+    def __init__(self, arr, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg, initial_mask=None):
         self.begin_chan = []
         self.mask_chan = []
         if initial_mask is not None:
@@ -215,31 +181,10 @@ class RFI(object):
         self.axes = ds  # off pulse only necessary for the profile which is in subplot ax2
         self.canvas = ds.figure.canvas
         self.ithres = ithres
-
-        if filename.endswith(".fil"):
-            fil = filterbank.filterbank(filename)
-            arr = import_fil_fits.filterbank_to_np(filename, dm=dm, maskfile=None)
-            self.total_N = fil.number_of_samples
-            self.freqs = fil.frequencies
-
-        if filename.endswith(".fits"):
-            fits = psrfits.PsrfitsFile(filename)
-            tsamp = fits.specinfo.dt
-            #if initial_mask is None:
-            #    arr, startt, peak_bin = import_fil_fits.fits_to_np(
-            #        filename, dm=dm, maskfile=None, bandpass=False, offpulse=None, AO=True,
-            #        hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
-            #        )
-            #else:
-            arr, startt, peak_bin = import_fil_fits.fits_to_np(
-                filename, dm=dm, maskfile=initial_mask,
-                AO=True, hdf5=in_hdf5_file, index=pulseindex, tavg=tavg
-                )
-            self.total_N = arr.shape[1]
-            self.freqs = fits.frequencies
-            self.nchan = len(self.freqs)
+        self.total_N = arr.shape[1]
 
         if favg > 1:
+            print("Downsampling is not tested and will most likely fail")
             nchan_tot = arr.shape[0]
             favg = float(favg)
             if (nchan_tot / favg) - int(nchan_tot / favg) != 0:
@@ -447,18 +392,6 @@ if __name__ == '__main__':
         pulses = [pulse_id for pulse_id in pulses
                   if not os.path.isfile(f'{pulse_id}/{basename}_{pulse_id}_mask.pkl')]
 
-# =============================================================================
-#
-#     pulses_str = []
-#     pulses_arr = []
-#     for line in pulses:
-#         pulses_str.append(line)
-#     print(pulses_str)
-#
-#     for i in range(len(pulses_str) - 1):
-#         pulses_arr.append(int(pulses_str[i].replace('/\n', '')))
-# =============================================================================
-
     smooth = None  # smoothing window
     tavg = options.tavg
     favg = options.favg
@@ -470,7 +403,8 @@ if __name__ == '__main__':
         index = pd.MultiIndex(levels=[[],[]], codes=[[],[]], names=['pulse_id', 'subburst'])
         cols = pd.MultiIndex.from_tuples([('General','DM'),
                                           ('Guesses', 'Amp'),
-                                          ('Guesses', 't_cent')])
+                                          ('Guesses', 't_cent'),
+                                          ('Guesses', 'f_cent')])
         prop_df = pd.DataFrame(index=index, columns=cols, dtype=np.float)
 
     print(prop_df)
@@ -509,8 +443,8 @@ if __name__ == '__main__':
             initial_mask = None
 
         #total_N=fits.specinfo.N / tavg
-        t_samp = fits.specinfo.dt
-        freqs = fits.frequencies[::-1]
+        t_samp = fits.specinfo.dt * tavg
+        freqs = fits.frequencies
         tot_freq = fits.specinfo.num_channels
         #total_N = int(100e-3 / (t_samp * tavg))
 
@@ -522,8 +456,13 @@ if __name__ == '__main__':
                                width_ratios=[5,] + [1,]*(cols-1))
 
         ithres = 0.5
-        offpulse_prof = offpulse(filename, gs, dm, True, pulses_hdf5, pulse_id, tavg,
-                                 initial_mask=initial_mask)
+
+        # Load data
+        data, _, peak_bin = import_fil_fits.fits_to_np(filename, dm=dm, maskfile=initial_mask,
+                                                           AO=True, hdf5=in_hdf5_file,
+                                                           index=pulse_id, tavg=tavg)
+        # Make figure and define offpulse region.
+        offpulse_prof = offpulse(data, gs, t_samp, peak_bin, initial_mask=initial_mask)
         ds = offpulse_prof.ds
         spec = offpulse_prof.spec
         prof = offpulse_prof.ax2plot
@@ -538,17 +477,22 @@ if __name__ == '__main__':
               "Click r at any time to refresh the plot and lower the threshold for the pink "
               "points (incase there is too much pink points for example).")
 
-        RFImask = RFI(filename, gs, prof, ds, spec, stat, ithres, ax2, dm, True, in_hdf5_file,
-                      pulse_id, favg, tavg, initial_mask=initial_mask)
+        RFImask = RFI(data, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg,
+                      initial_mask=initial_mask)
         plt.show()
 
-        profile = RFImask.final_prof
-        peak_bin = offpulse_prof.peak_bin
-        tsamp = offpulse_prof.tsamp
+        # Save the maskfile already
+        mask_chans = np.abs(np.array(RFImask.mask_chan))
+        maskfile = '%s_%s_mask.pkl' % (basename, pulse_id)
+        with open(maskfile, 'wb') as fmask:
+            pickle.dump(mask_chans, fmask)
 
-        begin_times = offpulse_prof.begin_times
-        end_times = offpulse_prof.end_times
+        profile = RFImask.final_prof
+
+        begin_times = np.array(offpulse_prof.begin_times)
+        end_times = np.array(offpulse_prof.end_times)
         total_N = len(profile)
+
         # Save the offpulse as if it was not downsampled
         if tavg != 1:
             total_N *= tavg
@@ -556,35 +500,27 @@ if __name__ == '__main__':
             end_times *= tavg
 
         off_pulse = np.ones(total_N, dtype=np.bool)
-        if begin_times == []:
+        if begin_times.size == 0:
             raise ValueError("Warning: you have not defined the off burst region")
         if len(begin_times) != len(end_times):
             raise ValueError("The number of begin and end times doesn't match, make sure to hold "
                              "x")
         else:
+            print(f"Excluding {begin_times.size} windows")
+            print(begin_times, end_times)
             for begin_time, end_time in zip(begin_times, end_times):
                 if begin_time < end_time:
-                    #off_pulse = np.append(np.arange(0, begin_times[-1], 1),
-                    #                      np.arange(end_times[-1], total_N - 1, 1))
                     off_pulse[begin_time:end_time] = False
                 else:
-                    off_pulse[end_time:begin_time:-1] = False
-                    #off_pulse = np.append(np.arange(0, end_times[-1], 1),
-                    #                      np.arange(begin_times[-1], total_N - 1, 1))
-
+                    off_pulse[begin_time:end_time:-1] = False
 
         #numchan = np.zeros_like(RFImask.mask_chan)
         #numchan+=tot_freq
-        mask_chans = np.abs(np.array(RFImask.mask_chan))
 
-        if begin_times != []:
+        if begin_times.size > 0:
             offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
             with open(offpulsefile, 'wb') as foff:
                 pickle.dump(off_pulse, foff)
-
-        maskfile = '%s_%s_mask.pkl' % (basename, pulse_id)
-        with open(maskfile, 'wb') as fmask:
-            pickle.dump(mask_chans, fmask)
 
         # Are there sub-bursts?
         answer = input("Does the burst have multiple components? (y/n) ")
@@ -616,71 +552,55 @@ if __name__ == '__main__':
             answer_burst = 0
 
         for bu in range(answer_burst):
-            #os.system('mkdir ../%s' % str(pulse_id) + '-' + str(bu + 1))
-            #os.system('cp ./%s ../%s/%s_%s.fits' % (
-            #    filename, str(pulse_id) + '-' + str(bu + 1), basename,
-            #    str(pulse_id) + '-' + str(bu + 1)))
-            #os.system('cp ./%s_%s_mask.pkl ../%s/%s_%s_mask.pkl' % (
-            #    basename, pulse_id, str(pulse_id) + '-' + str(bu + 1), basename,
-            #    str(pulse_id) + '-' + str(bu + 1)))
             for sb in range(n_subbs[bu]):
                 ind1.append(str(pulse_id) + '-' + str(bu + 1))
                 ind2.append('sb' + str(sb + 1))
                 DMs.append(dm)
 
-        rows = 1
-        cols = 1
-        fig = plt.figure(figsize=(10, 10))
-        gs = gridspec.GridSpec(rows, cols)
-
         print("Please click where each sub-burst peak of the main burst is.")
-        burst_id = identify_bursts(filename, gs, tavg, dm, in_hdf5_file,
-                                   pulse_id, maskfile, offpulsefile)
+        data.mask[mask_chans] = True
+        data = import_fil_fits.bandpass_calibration(data, offpulsefile, tavg=tavg, AO=True)
+        burst_id = identify_bursts(data, tavg, peak_bin)
         plt.show()
 
         main_burst_expected = answer_sub
 
         while len(burst_id.peak_times) != main_burst_expected:
-            fig = plt.figure(figsize=(10, 10))
-            gs = gridspec.GridSpec(rows, cols)
             print("The number of selections did not match the total number of components. "
                   "Please try again.")
-            burst_id = identify_bursts(filename, gs, tavg, dm,
-                                       in_hdf5_file, pulse_id, maskfile, offpulsefile)
+            burst_id = identify_bursts(data, tavg, peak_bin)
             plt.show()
 
         peak_times = np.array(burst_id.peak_times) * tavg
-        amps = burst_id.peak_amps
+        peak_freqs = np.array(burst_id.peak_freqs) * favg
+        amps = np.array(burst_id.peak_amps) / np.sqrt(tavg)
 
         if answer == 'y':
             for other_bursts in range(answer_burst):
-                fig = plt.figure(figsize=(10, 10))
-                gs = gridspec.GridSpec(rows, cols)
                 print("Please click where each sub-burst peak of the other bursts are (ordered "
                       "same as before).")
-                burst_id = identify_bursts(filename, gs, tavg, dm,
-                                           in_hdf5_file, pulse_id, maskfile, offpulsefile)
+                burst_id = identify_bursts(data, tavg, peak_bin)
                 plt.show()
                 other_burst_expected = n_subbs[other_bursts]
 
                 while len(burst_id.peak_times) != other_burst_expected:
-                    fig = plt.figure(figsize=(10, 10))
-                    gs = gridspec.GridSpec(rows, cols)
                     print("The number of selections did not match the total number of "
                           "components. Please try again.")
-                    burst_id = identify_bursts(filename, gs, tavg, dm, in_hdf5_file,
-                                               pulse_id, maskfile, offpulsefile)
+                    burst_id = identify_bursts(data, tavg, peak_bin)
                     plt.show()
 
                 # remove the additional burst from the offpulsetimes
-                begin_eb = np.min(burst_id.peak_times) - (10e-3 / (tsamp * tavg))
-                end_eb = np.max(burst_id.peak_times) + (10e-3 / (tsamp * tavg))
+                #begin_eb = np.min(burst_id.peak_times) - (10e-3 / t_samp)
+                #end_eb = np.max(burst_id.peak_times) + (10e-3 / t_samp)
 
-                off_pulse = np.array(off_pulse)
-                off_pulse = off_pulse[(off_pulse < begin_eb) | (off_pulse > end_eb)]
+                #off_pulse = np.array(off_pulse)
+                #off_pulse = off_pulse[(off_pulse < begin_eb) | (off_pulse > end_eb)]
 
                 peak_times = np.append(peak_times, np.array(burst_id.peak_times) * tavg)
-                amps.extend(burst_id.peak_amps)
+                peak_freqs = np.append(peak_freqs, np.array(burst_id.peak_freqs) * favg)
+                amps = np.append(amps, np.array(burst_id.peak_amps) / np.sqrt(tavg))
+
+
 
             offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
             with open(offpulsefile, 'wb') as foff:
@@ -689,13 +609,15 @@ if __name__ == '__main__':
             #os.system('cp ./%s_%s_offpulse_time.pkl ../%s/%s_%s_offpulse_time.pkl' %
             #          (basename, pulse_id, str(pulse_id) + '-' + str(other_bursts + 1), basename,
             #           str(pulse_id) + '-' + str(other_bursts + 1)))
-
+        peak_freqs = freqs[peak_freqs.astype(np.int)]
         os.chdir('..')
         cols_to_write = pd.MultiIndex.from_tuples([('General','DM'), ('Guesses', 'Amp'),
-                                                   ('Guesses', 't_cent')])
+                                                   ('Guesses', 't_cent'), ('Guesses', 'f_cent')])
         # Note: peak_times is in samples
-        for idx1, idx2, dm, amp, time in zip(ind1, ind2, DMs, amps, peak_times):
-            prop_df.loc[(idx1, idx2), cols_to_write] = dm, amp, time
+        for idx1, idx2, dm, amp, time, freq in zip(ind1, ind2, DMs, amps, peak_times, peak_freqs):
+            prop_df.loc[(idx1, idx2), cols_to_write] = dm, amp, time, freq
 
-        print(prop_df)
+        # Print from the added pulse to the end
+        added_index = (prop_df.index.get_level_values(0)==str(pulse_id)).nonzero()[0][0]
+        print(prop_df.iloc[added_index:])
         prop_df.to_hdf('%s_burst_properties.hdf5' % basename, 'pulses')
