@@ -31,6 +31,21 @@ def find_nearest(array, value):
     return idx
 
 
+def one_sided_std(x):
+    """Calculate the rms from the median only from values below."""
+    x = np.sort(x)[:x.shape[0]//2]
+    return np.sqrt(np.mean((x[:-1] - x[-1])**2))
+
+
+def find_upper_limit(stats, threshold=5.):
+    """Finds upper limit for a statistic to be "normal".
+    stats : ndarray with some statistic e.g. the one returned by normaltest
+    """
+    median = np.median(stats)
+    rms = one_sided_std(stats)
+    return median + threshold*rms
+
+
 class identify_bursts(object):
     def __init__(self, arr, tsamp, peak_bin):
         rows = 2
@@ -54,16 +69,16 @@ class identify_bursts(object):
 
         ax_ts.plot(profile, 'k-', alpha=1.0)
         y_range = profile.max() - profile.min()
-        ax_ts.set_ylim(profile.min() - y_range * 0.15, profile.max() + y_range * 0.1)
+        ax_ts.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
         ax_ts.axvline(peak_bin - (5e-3 / tsamp), color='r', linestyle='--')
         ax_ts.axvline(peak_bin + (5e-3 / tsamp), color='r', linestyle='--')
-        #fig.add_subplot(ax1)
+
         ax_spec.step(spectrum, np.arange(spectrum.shape[0]), 'k-')
         y_range = spectrum.max() - spectrum.min()
-        ax_spec.set_xlim(spectrum.min() - y_range * 0.15, spectrum.max() + y_range * 0.1)
+        ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
 
-        ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(), origin='upper', aspect='auto')
-        #ax_data.imshow(arr)
+        ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(), origin='upper',
+                       aspect='auto')
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         indices = np.array(self.peak_times).argsort()
@@ -78,7 +93,7 @@ class identify_bursts(object):
             self.peak_times.append(x1)
             self.peak_freqs.append(y1)
             #maxval = np.max(self.arr[:, int(x1)])
-            meanval = np.mean(self.arr[y1-3:y1+3, int(x1)-3:int(x1)+3])
+            meanval = np.mean(self.arr[y1-3:y1+4, int(x1)-3:int(x1)+4])
             self.peak_amps.append(meanval)  # correct for downsampling
             self.ax_data.scatter(x1, y1, lw=1, color='r', marker='x', s=100, zorder=10)
             plt.draw()
@@ -108,7 +123,7 @@ class offpulse(object):
         ax2.tick_params(axis='y', which='both', left='off', right='off', labelleft='off')
         ax2.tick_params(axis='x', labelbottom='off', top='off')
         y_range = profile.max() - profile.min()
-        ax2.set_ylim(profile.min() - y_range * 0.15, profile.max() + y_range * 0.1)
+        ax2.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
         ax2.tick_params(labelbottom=False, labeltop=False, labelleft=False,
                         labelright=False, bottom=True, top=True, left=True, right=True)
         ax2.axvline(peak_bin - (5e-3 / tsamp), color='r', linestyle='--')
@@ -158,8 +173,6 @@ class offpulse(object):
                 x2 = event.xdata
                 index2 = np.int(x2)
                 self.end_times.append(index2)
-                y_range = self.profile.max() - self.profile.min()
-                ymin = self.profile.min()
                 if self.begin_times[-1] < index2:
                     self.lines['burst'] = self.axes.axvspan(
                         self.begin_times[-1], index2, color='#FF00FF', alpha=0.5, zorder=0.8)
@@ -172,7 +185,8 @@ class offpulse(object):
 
 
 class RFI(object):
-    def __init__(self, arr, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg, initial_mask=None):
+    def __init__(self, arr, spectrum, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg,
+                 initial_mask=None, auto_flag=True):
         self.begin_chan = []
         self.mask_chan = []
         if initial_mask is not None:
@@ -197,12 +211,13 @@ class RFI(object):
                 arr = np.array(np.row_stack([np.mean(subint, axis=0)
                                              for subint in np.vsplit(arr, newnchan)]))
 
-        spectrum = np.mean(arr, axis=1)
+        #spectrum = np.mean(arr, axis=1)
+        self.spectrum = spectrum
         self.nchans = len(spectrum)
         self.freqbins = np.arange(0, arr.shape[0], 1)
-        threshold = np.amax(arr) - (np.abs(np.amax(arr) - np.amin(arr)) * 0.99)
+        threshold = np.amax(arr) - (np.abs(np.amax(arr)-np.amin(arr)) * self.ithres)
 
-        self.cmap = mpl.cm.binary
+        self.cmap = mpl.cm.viridis #inferno
         self.ax1 = ds
         self.ax3 = spec
         self.ax2 = ax2
@@ -214,10 +229,10 @@ class RFI(object):
                                        vmax=threshold,
                                        cmap=self.cmap,
                                        origin='upper',
-                                       interpolation='nearest',
+                                       #interpolation='nearest',
                                        picker=True)
         self.cmap.set_over(color='pink')
-        self.cmap.set_bad(color='red')
+        #self.cmap.set_bad(color='midnightblue')
         #self.ax1.set_xlim((peak_bin - (50e-3 / (tsamp * tavg))),
         #                  (peak_bin + (50e-3 / (tsamp * tavg))))
 
@@ -225,16 +240,30 @@ class RFI(object):
         self.ax3.tick_params(axis='x', which='both', top='off', bottom='off', labelbottom='off')
         self.ax3.tick_params(axis='y', labelleft='off')
         self.ax3.set_ylim(self.freqbins[-1], self.freqbins[0])
-        x_range = spectrum.max() - spectrum.min()
-        self.ax3.set_xlim(-x_range / 4., x_range * 6. / 5.)
+        #x_range = spectrum.max() - spectrum.min()
+        self.ax3.set_xlim(spectrum.min(), spectrum.max())  #-x_range / 4., x_range * 6. / 5.)
 
         # Plot channel statistics
-        normal_deviation = normaltest(arr, axis=1)[0]
-        self.ax4plot, = self.ax4.plot(normal_deviation, self.freqbins, 'k-', zorder=2)
+        self.normal_deviation = normaltest(arr.data, axis=1)[0]
+        self.ax4plot, = self.ax4.plot(self.normal_deviation, self.freqbins, 'k-', zorder=2)
         self.ax4.tick_params(axis='x', which='both', top='off', bottom='off', labelbottom='off')
         self.ax4.tick_params(axis='y', labelleft='off')
         self.ax4.set_ylim(self.freqbins[-1], self.freqbins[0])
-        self.ax4.set_xlim(-x_range / 4., x_range * 6. / 5.)
+        self.ax4.set_xlim(np.nanmin(self.normal_deviation), np.nanmax(self.normal_deviation))
+
+        # Automatically find some bad channels
+        mask = np.zeros(self.nchans, dtype=bool)
+        mask[self.mask_chan] = True
+        self.normal_deviation = np.ma.masked_where(mask, self.normal_deviation)
+        self.arr = arr
+        if auto_flag:
+            norm_thres = find_upper_limit(self.normal_deviation.compressed(), threshold=5.)
+            bad_chans = self.normal_deviation > norm_thres
+            self.arr.mask[bad_chans] = True
+            self.normal_deviation.mask[bad_chans] = True
+            self.mask_chan.extend((~mask & bad_chans).nonzero()[0])
+
+            self.ax4.axvline(norm_thres, color='r')
 
         fig.add_subplot(self.ax1)
         fig.add_subplot(self.ax4)
@@ -273,8 +302,6 @@ class RFI(object):
             tb = plt.get_current_fig_manager().toolbar
             if tb.mode == '':
                 y1 = event.ydata
-                arr = self.ax1plot.get_array()
-                vmin = np.amin(arr)
                 index = find_nearest(self.freqbins, y1)
                 self.begin_chan.append(index)
 
@@ -300,7 +327,7 @@ class RFI(object):
             tb = plt.get_current_fig_manager().toolbar
             if tb.mode == '':
                 y2 = event.ydata
-                arr = self.ax1plot.get_array()
+                arr = self.arr  # ax1plot.get_array()
                 vmin = np.amin(arr)
                 index2 = find_nearest(self.freqbins, y2)
                 if self.begin_chan[-1] > index2:
@@ -309,21 +336,23 @@ class RFI(object):
                     arr[self.begin_chan[-1]:index2 + 1, :] = vmin - 100
                 mask = arr < vmin - 50
                 arr = np.ma.masked_where(mask, arr)
-                self.ax1plot.set_data(arr)
+                self.arr = arr
+                self.ax1plot.set_data(arr.filled(0))
                 profile = np.mean(arr, axis=0)
                 self.ax2plot.set_data(np.arange(0, self.total_N, 1), profile)
-                spectrum = np.mean(arr, axis=1)
-                self.ax3plot.set_data(spectrum, self.freqbins)
-                normal_deviation = normaltest(arr, axis=1)[0]
-                normal_deviation = np.ma.masked_where(mask[:, 0], normal_deviation)
-                self.ax4plot.set_data(normal_deviation, self.freqbins)
+
+                self.spectrum = np.ma.masked_where(mask.any(axis=1), self.spectrum)
+                self.ax3plot.set_data(self.spectrum, self.freqbins)
+                #normal_deviation = normaltest(arr, axis=1)[0]
+                self.normal_deviation[mask[:, 0]] = True
+                self.ax4plot.set_data(self.normal_deviation, self.freqbins)
 
                 threshold = np.amax(arr) - (np.abs(np.amax(arr) - np.amin(arr)) * self.ithres)
                 self.ithres -= 0.005
                 self.ax1plot.set_clim(vmin=np.amin(arr), vmax=threshold)
 
-                self.ax3.set_xlim(np.amin(spectrum), np.amax(spectrum))
-                self.ax4.set_xlim(np.amin(normal_deviation), np.amax(normal_deviation))
+                self.ax3.set_xlim(np.min(self.spectrum), np.max(self.spectrum))
+                self.ax4.set_xlim(np.amin(self.normal_deviation), np.amax(self.normal_deviation))
                 y_range = profile.max() - profile.min()
                 self.ax2.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
 
@@ -365,6 +394,8 @@ if __name__ == '__main__':
                            "there are channels that are always contaminated for example).")
     parser.add_option('-p', '--pulse', type='str', default=None,
                       help="Give a pulse id to process only this pulse.")
+    parser.add_option('-a', '--autoflag', action='store_false', default=True,
+                      help="Do not autoflag channels.")
 
     options, args = parser.parse_args()
 
@@ -395,6 +426,8 @@ if __name__ == '__main__':
     smooth = None  # smoothing window
     tavg = options.tavg
     favg = options.favg
+    auto_flag = options.autoflag
+    print(auto_flag)
 
     prop_file = f'{basename}_burst_properties.hdf5'
     if os.path.isfile(prop_file):
@@ -437,6 +470,7 @@ if __name__ == '__main__':
             initial_mask = options.mask
         elif os.path.isfile(f'{basename}_{pulse_id}_mask.pkl'):
             initial_mask = f'{basename}_{pulse_id}_mask.pkl'
+            auto_flag = False
         elif os.path.isfile('../mask.pkl'):
             initial_mask = '../mask.pkl'
         else:
@@ -455,12 +489,16 @@ if __name__ == '__main__':
                                height_ratios=[0.5,]*(rows-1) + [2,],
                                width_ratios=[5,] + [1,]*(cols-1))
 
-        ithres = 0.5
-
         # Load data
         data, _, peak_bin = import_fil_fits.fits_to_np(filename, dm=dm, maskfile=initial_mask,
                                                            AO=True, hdf5=in_hdf5_file,
                                                            index=pulse_id, tavg=tavg)
+        # Correct the bandpass already, but plot the real spectrum
+        spectrum = np.mean(data.data, axis=1)
+        data.data[:] -= spectrum[:, np.newaxis]
+        nonzero_chans = (data.data != 0.).any(axis=1)  # To avoid deviding by zero
+        data.data[nonzero_chans] /= np.std(data.data[nonzero_chans], axis=1)[:, np.newaxis]
+
         # Make figure and define offpulse region.
         offpulse_prof = offpulse(data, gs, t_samp, peak_bin, initial_mask=initial_mask)
         ds = offpulse_prof.ds
@@ -476,13 +514,13 @@ if __name__ == '__main__':
               "Click y to remove this selection.\n"
               "Click r at any time to refresh the plot and lower the threshold for the pink "
               "points (incase there is too much pink points for example).")
-
-        RFImask = RFI(data, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg,
-                      initial_mask=initial_mask)
+        ithres = 0.
+        RFImask = RFI(data, spectrum, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg,
+                      initial_mask=initial_mask, auto_flag=auto_flag)
         plt.show()
 
         # Save the maskfile already
-        mask_chans = np.abs(np.array(RFImask.mask_chan))
+        mask_chans = np.array(RFImask.mask_chan)
         maskfile = '%s_%s_mask.pkl' % (basename, pulse_id)
         with open(maskfile, 'wb') as fmask:
             pickle.dump(mask_chans, fmask)
@@ -522,93 +560,47 @@ if __name__ == '__main__':
             with open(offpulsefile, 'wb') as foff:
                 pickle.dump(off_pulse, foff)
 
-        # Are there sub-bursts?
-        answer = input("Does the burst have multiple components? (y/n) ")
-        if answer == 'y':
-            answer_sub = int(input("How many? (integer) "))
-        if answer == 'n':
-            answer_sub = 1
-
-        DMs = answer_sub*[dm]
-        for j in range(answer_sub):
-            ind1.append(str(pulse_id))
-            ind2.append('sb' + str(j + 1))
-
-        # Are there other bursts in this file?
-        answer = input("Are there other (separate) bursts in this file? (y/n) ")
-        if answer == 'y':
-            answer_burst = int(input("How many? (integer) "))
-            answer_burst_sub = input("Does this (these) burst(s) have multiple components? (y/n) ")
-            if answer_burst_sub == 'y':
-                sub_components_other_bursts = input(
-                    "Give the number of components per burst (in order of arrival time -- "
-                    "excluding main burst), separated by commas e.g. 3,2,1,3 ")
-                n_subbs = [int(x.strip()) for x in sub_components_other_bursts.split(',')]
-
-            if answer_burst_sub == 'n':
-                n_subbs = answer_burst*[1]
-
-        if answer == 'n':
-            answer_burst = 0
-
-        for bu in range(answer_burst):
-            for sb in range(n_subbs[bu]):
-                ind1.append(str(pulse_id) + '-' + str(bu + 1))
-                ind2.append('sb' + str(sb + 1))
-                DMs.append(dm)
-
         print("Please click where each sub-burst peak of the main burst is.")
         data.mask[mask_chans] = True
         data = import_fil_fits.bandpass_calibration(data, offpulsefile, tavg=tavg, AO=True)
         burst_id = identify_bursts(data, tavg, peak_bin)
         plt.show()
 
-        main_burst_expected = answer_sub
+        n_subbursts = len(burst_id.peak_times)
+        DMs = n_subbursts*[dm]
+        for j in range(n_subbursts):
+            ind1.append(str(pulse_id))
+            ind2.append('sb' + str(j + 1))
 
-        while len(burst_id.peak_times) != main_burst_expected:
-            print("The number of selections did not match the total number of components. "
-                  "Please try again.")
+        peak_times = burst_id.peak_times
+        peak_freqs = burst_id.peak_freqs
+        amps = burst_id.peak_amps
+
+        # Are there other bursts in this file?
+        answer = input("Are there other (separate) bursts in this file? (y/n) ")
+        burst = 1
+        while answer == 'y':
+            print("Please click where each sub-burst peak of the next burst is.")
             burst_id = identify_bursts(data, tavg, peak_bin)
             plt.show()
 
-        peak_times = np.array(burst_id.peak_times) * tavg
-        peak_freqs = np.array(burst_id.peak_freqs) * favg
-        amps = np.array(burst_id.peak_amps) / np.sqrt(tavg)
+            n_subbursts = len(burst_id.peak_times)
+            for sb in range(n_subbursts):
+                ind1.append(str(pulse_id) + '-' + str(burst))
+                ind2.append('sb' + str(sb + 1))
+                DMs.append(dm)
 
-        if answer == 'y':
-            for other_bursts in range(answer_burst):
-                print("Please click where each sub-burst peak of the other bursts are (ordered "
-                      "same as before).")
-                burst_id = identify_bursts(data, tavg, peak_bin)
-                plt.show()
-                other_burst_expected = n_subbs[other_bursts]
+            peak_times.extend(burst_id.peak_times)
+            peak_freqs.extend(burst_id.peak_freqs)
+            amps.extend(burst_id.peak_amps)
 
-                while len(burst_id.peak_times) != other_burst_expected:
-                    print("The number of selections did not match the total number of "
-                          "components. Please try again.")
-                    burst_id = identify_bursts(data, tavg, peak_bin)
-                    plt.show()
+            answer = input("Are there other (separate) bursts in this file? (y/n) ")
+            burst += 1
 
-                # remove the additional burst from the offpulsetimes
-                #begin_eb = np.min(burst_id.peak_times) - (10e-3 / t_samp)
-                #end_eb = np.max(burst_id.peak_times) + (10e-3 / t_samp)
+        peak_times = np.array(peak_times) * tavg
+        peak_freqs = np.array(peak_freqs) * favg
+        amps = np.array(amps) / np.sqrt(tavg)
 
-                #off_pulse = np.array(off_pulse)
-                #off_pulse = off_pulse[(off_pulse < begin_eb) | (off_pulse > end_eb)]
-
-                peak_times = np.append(peak_times, np.array(burst_id.peak_times) * tavg)
-                peak_freqs = np.append(peak_freqs, np.array(burst_id.peak_freqs) * favg)
-                amps = np.append(amps, np.array(burst_id.peak_amps) / np.sqrt(tavg))
-
-
-
-            offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
-            with open(offpulsefile, 'wb') as foff:
-                pickle.dump(off_pulse, foff)
-
-            #os.system('cp ./%s_%s_offpulse_time.pkl ../%s/%s_%s_offpulse_time.pkl' %
-            #          (basename, pulse_id, str(pulse_id) + '-' + str(other_bursts + 1), basename,
-            #           str(pulse_id) + '-' + str(other_bursts + 1)))
         peak_freqs = freqs[peak_freqs.astype(np.int)]
         os.chdir('..')
         cols_to_write = pd.MultiIndex.from_tuples([('General','DM'), ('Guesses', 'Amp'),
