@@ -130,12 +130,6 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None
 
     arr = spec.data
 
-    if maskfile is not None:
-        amaskfile = pickle.load(open(maskfile, 'rb'))
-        mask = np.zeros(arr.shape, dtype=np.bool)
-        mask[amaskfile] = True
-        arr = np.ma.masked_where(mask, arr)
-
     if smooth_val == 1:
         smooth_val = None
 
@@ -148,6 +142,12 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None
         newsamps = nsamples // tavg
         arr = arr.reshape(arr.shape[0], newsamps, tavg).mean(axis=-1)
         t_samp *= tavg
+
+    if maskfile is not None:
+        amaskfile = pickle.load(open(maskfile, 'rb'))
+        mask = np.zeros(arr.shape, dtype=np.bool)
+        mask[amaskfile] = True
+        arr = np.ma.masked_where(mask, arr)
 
     if AO is True:
         # time in seconds of burst in cropped fits fileim
