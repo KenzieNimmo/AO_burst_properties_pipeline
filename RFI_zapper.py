@@ -23,6 +23,7 @@ import pandas as pd
 import warnings
 
 from scipy.stats import normaltest
+from fit_bursts import ds
 
 
 def find_nearest(array, value):
@@ -47,43 +48,50 @@ def find_upper_limit(stats, threshold=5.):
 
 
 class identify_bursts(object):
-    def __init__(self, arr, tsamp, peak_bin):
+    def __init__(self, arr, tsamp, favg, peak_bin):
+        self.peak_times = []
+        self.peak_freqs = []
+        self.peak_amps = []
+        self.peak_bin = peak_bin
+        self.tsamp = tsamp
+        self.tavg = 1
+        self.favg = favg
+        self.arr = arr
+        #arr = ds(arr, factor=favg, axis=0)
+        profile = np.sum(arr, axis=0)
+        spectrum = np.sum(arr, axis=1)
+
+        # Plot the whole thing
         rows = 2
         cols = 2
         gs = gridspec.GridSpec(rows, cols, wspace=0., hspace=0.,
                                height_ratios=[0.5,]*(rows-1) + [2,],
                                width_ratios=[5,] + [1,]*(cols-1))
-        self.peak_times = []
-        self.peak_freqs = []
-        self.peak_amps = []
+
         fig = plt.figure(figsize=(16, 10))
-        ax_data = plt.subplot(gs[2])  # dynamic spectrum
-        ax_ts = plt.subplot(gs[0], sharex=ax_data)  # time series
-        ax_spec = plt.subplot(gs[-1], sharey=ax_data)  # spectrum
-        self.ax_data = ax_data
-        self.canvas = ax_data.figure.canvas
-        profile = np.sum(arr, axis=0)
-        spectrum = np.sum(arr, axis=1)
+        self.ax_data = plt.subplot(gs[2])  # dynamic spectrum
+        self.ax_ts = plt.subplot(gs[0], sharex=self.ax_data)  # time series
+        self.ax_spec = plt.subplot(gs[-1], sharey=self.ax_data)  # spectrum
+        self.canvas = self.ax_data.figure.canvas
 
-        self.arr = arr
-
-        ax_ts.plot(profile, 'k-', alpha=1.0)
+        self.ts_plot, = self.ax_ts.plot(profile, 'k-', alpha=1.0)
         y_range = profile.max() - profile.min()
-        ax_ts.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
-        ax_ts.axvline(peak_bin - (5e-3 / tsamp), color='r', linestyle='--')
-        ax_ts.axvline(peak_bin + (5e-3 / tsamp), color='r', linestyle='--')
+        self.ax_ts.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
+        self.ax_ts.axvline(peak_bin - (5e-3 / tsamp), color='r', linestyle='--')
+        self.ax_ts.axvline(peak_bin + (5e-3 / tsamp), color='r', linestyle='--')
 
-        ax_spec.step(spectrum, np.arange(spectrum.shape[0]), 'k-')
+        self.spec_plot, = self.ax_spec.step(spectrum, np.arange(spectrum.shape[0]), 'k-')
         y_range = spectrum.max() - spectrum.min()
-        ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
+        self.ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
 
-        ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(), origin='upper',
+        self.data_plot = self.ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(), origin='upper',
                        aspect='auto')
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
-        indices = np.array(self.peak_times).argsort()
-        self.peak_times = list(np.array(self.peak_times)[indices])  # I guess this is too late
-        self.peak_amps = list(np.array(self.peak_amps)[indices])
+        self.keyPress = self.canvas.mpl_connect('key_press_event', self.onKeyPress)
+        #indices = np.array(self.peak_times).argsort()
+        #self.peak_times = list(np.array(self.peak_times)[indices])  # I guess this is too late
+        #self.peak_amps = list(np.array(self.peak_amps)[indices])
 
     def onpress(self, event):
         tb = plt.get_current_fig_manager().toolbar
@@ -95,8 +103,39 @@ class identify_bursts(object):
             #maxval = np.max(self.arr[:, int(x1)])
             meanval = np.mean(self.arr[y1-3:y1+4, int(x1)-3:int(x1)+4])
             self.peak_amps.append(meanval)  # correct for downsampling
-            self.ax_data.scatter(x1, y1, lw=1, color='r', marker='x', s=100, zorder=10)
+            self.ax_data.scatter(x1, y1, lw=1, color='r', marker='x', s=100,
+                                 zorder=10)
+            print(x1, y1, meanval)
             plt.draw()
+    def onKeyPress(self, event):
+        if event.key == 'i':
+            self.tavg *= 2
+        if event.key == 'y':
+            self.favg *= 2
+        if event.key == 'u':
+            if self.tavg > 1:
+                self.tavg //= 2
+        if event.key == 't':
+            if self.favg > 1:
+                self.favg //= 2
+
+        arr = ds(ds(self.arr, factor=self.favg), factor=self.tavg, axis=1)
+        profile = np.sum(arr, axis=0)
+        spectrum = np.sum(arr, axis=1)
+
+        # Replot.
+        self.ts_plot.set_data(np.arange(profile.shape[0]*self.tavg, step=self.tavg), profile)
+        y_range = profile.max() - profile.min()
+        self.ax_ts.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
+
+        self.spec_plot.set_data(spectrum, np.arange(spectrum.shape[0]*self.favg, step=self.favg))
+        y_range = spectrum.max() - spectrum.min()
+        self.ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
+
+        self.data_plot.set_data(arr.filled(0))
+        self.data_plot.set_clim(vmin=arr.min(), vmax=arr.max())
+        plt.draw()
+
 
 
 class offpulse(object):
@@ -109,7 +148,7 @@ class offpulse(object):
         ax2 = plt.subplot(gs[0], sharex=ax1)  # profile
         ax3 = plt.subplot(gs[-1], sharey=ax1)  # spectrum
         ax4 = plt.subplot(gs[-2], sharey=ax1)
-        self.ds = ax1
+        self.dyn_spec = ax1
         self.spec = ax3
         self.stat = ax4  # To plot channel statistics
 
@@ -185,31 +224,33 @@ class offpulse(object):
 
 
 class RFI(object):
-    def __init__(self, arr, spectrum, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg,
+    def __init__(self, arr, spectrum, gs, prof, dyn_spec, spec, stat, ithres, ax2, tavg,
                  initial_mask=None, auto_flag=True):
         self.begin_chan = []
         self.mask_chan = []
         if initial_mask is not None:
             initial = pickle.load(open(initial_mask, 'rb'))
             self.mask_chan = [int(x) for x in initial]
-        self.axes = ds  # off pulse only necessary for the profile which is in subplot ax2
-        self.canvas = ds.figure.canvas
+        self.axes = dyn_spec  # off pulse only necessary for the profile which is in subplot ax2
+        self.canvas = dyn_spec.figure.canvas
         self.ithres = ithres
         self.total_N = arr.shape[1]
 
-        if favg > 1:
-            print("Downsampling is not tested and will most likely fail")
-            nchan_tot = arr.shape[0]
-            favg = float(favg)
-            if (nchan_tot / favg) - int(nchan_tot / favg) != 0:
-                print(f"The total number of channels is {nchan_tot}, please choose an fscrunch "
-                      + "value that divides the total number of channels."
-                      )
-                sys.exit()
-            else:
-                newnchan = nchan_tot / favg
-                arr = np.array(np.row_stack([np.mean(subint, axis=0)
-                                             for subint in np.vsplit(arr, newnchan)]))
+# =============================================================================
+#         if favg > 1:
+#             print("Downsampling is not tested and will most likely fail")
+#             nchan_tot = arr.shape[0]
+#             favg = float(favg)
+#             if (nchan_tot / favg) - int(nchan_tot / favg) != 0:
+#                 print(f"The total number of channels is {nchan_tot}, please choose an fscrunch "
+#                       + "value that divides the total number of channels."
+#                       )
+#                 sys.exit()
+#             else:
+#                 newnchan = nchan_tot / favg
+#                 arr = np.array(np.row_stack([np.mean(subint, axis=0)
+#                                              for subint in np.vsplit(arr, newnchan)]))
+# =============================================================================
 
         #spectrum = np.mean(arr, axis=1)
         self.spectrum = spectrum
@@ -218,7 +259,7 @@ class RFI(object):
         threshold = np.amax(arr) - (np.abs(np.amax(arr)-np.amin(arr)) * self.ithres)
 
         self.cmap = mpl.cm.viridis #inferno
-        self.ax1 = ds
+        self.ax1 = dyn_spec
         self.ax3 = spec
         self.ax2 = ax2
         self.ax4 = stat
@@ -277,7 +318,7 @@ class RFI(object):
         self.r = False
 
     def onKeyPress(self, event):
-        if event.key == 'x':
+        if event.key in ('x', 'u'):
             self.x = True
         if event.key == 'r':
             self.r = True
@@ -289,7 +330,7 @@ class RFI(object):
             plt.draw()
 
     def onKeyRelease(self, event):
-        if event.key == 'x':
+        if event.key in ('x', 'u'):
             self.x = False
         if event.key == 'r':
             self.r = False
@@ -380,8 +421,8 @@ if __name__ == '__main__':
                                    description="Interactive RFI zapper")
 
     parser.add_option('-f', '--favg', dest='favg', type='int', default=1,
-                      help="If -f option is used, frequency averaging is applied using the "
-                           "factor given after -f.")
+                      help="If -f option is used, frequency averaging is applied after RFI "
+                      "exision using the factor given after -f.")
     parser.add_option('-t', '--tavg', dest='tavg', type='int', default=1,
                       help="If -t option is used, time averaging is applied using the factor "
                            "given after -t.")
@@ -501,7 +542,7 @@ if __name__ == '__main__':
 
         # Make figure and define offpulse region.
         offpulse_prof = offpulse(data, gs, t_samp, peak_bin, initial_mask=initial_mask)
-        ds = offpulse_prof.ds
+        dyn_spec = offpulse_prof.dyn_spec
         spec = offpulse_prof.spec
         prof = offpulse_prof.ax2plot
         ax2 = offpulse_prof.axes
@@ -509,13 +550,13 @@ if __name__ == '__main__':
 
         # instructions
         print("Click and drag on the dynamic spectrum to identify frequency channels to mask.\n"
-              "Hold x and click on the profile and drag to identify where the burst is (no "
-              "need for complete accuracy as this is so we know the off pulse region).\n"
+              "Hold x or u and click on the profile and drag to identify regions to be excluded "
+              "from the bandpass calibration.\n"
               "Click y to remove this selection.\n"
               "Click r at any time to refresh the plot and lower the threshold for the pink "
               "points (incase there is too much pink points for example).")
         ithres = 0.
-        RFImask = RFI(data, spectrum, gs, prof, ds, spec, stat, ithres, ax2, favg, tavg,
+        RFImask = RFI(data, spectrum, gs, prof, dyn_spec, spec, stat, ithres, ax2, tavg,
                       initial_mask=initial_mask, auto_flag=auto_flag)
         plt.show()
 
@@ -561,9 +602,10 @@ if __name__ == '__main__':
                 pickle.dump(off_pulse, foff)
 
         print("Please click where each sub-burst peak of the main burst is.")
+        print("Use the keys i and u to downsample and y and t to subband.")
         data.mask[mask_chans] = True
         data = import_fil_fits.bandpass_calibration(data, offpulsefile, tavg=tavg, AO=True)
-        burst_id = identify_bursts(data, tavg, peak_bin)
+        burst_id = identify_bursts(data, t_samp, favg, peak_bin)
         plt.show()
 
         n_subbursts = len(burst_id.peak_times)
@@ -581,7 +623,7 @@ if __name__ == '__main__':
         burst = 1
         while answer == 'y':
             print("Please click where each sub-burst peak of the next burst is.")
-            burst_id = identify_bursts(data, tavg, peak_bin)
+            burst_id = identify_bursts(data, t_samp, favg, peak_bin)
             plt.show()
 
             n_subbursts = len(burst_id.peak_times)
@@ -598,7 +640,7 @@ if __name__ == '__main__':
             burst += 1
 
         peak_times = np.array(peak_times) * tavg
-        peak_freqs = np.array(peak_freqs) * favg
+        peak_freqs = np.array(peak_freqs)
         amps = np.array(amps) / np.sqrt(tavg)
 
         peak_freqs = freqs[peak_freqs.astype(np.int)]
