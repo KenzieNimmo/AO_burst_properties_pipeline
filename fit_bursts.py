@@ -18,21 +18,23 @@ from presto import psrfits
 
 def ds(array, factor=2, axis=0):
     """Downsample using the mean along a given axis"""
-    if axis < 0:
-        axis += array.ndim
+    if factor > 1:
+        if axis < 0:
+            axis += array.ndim
 
-    axis_len = array.shape[axis]
-    if axis_len % factor != 0:
-        print(f"The array axis with length {axis_len} is trimmed to fit the downsample factor "
-              f"{factor}.")
-        slc = [slice(None)] * array.ndim
-        slc[axis] = slice(-(axis_len % factor))
-        array = array[tuple(slc)]
+        # Trim the array if necessary.
+        axis_len = array.shape[axis]
+        if axis_len % factor != 0:
+            print(f"The array axis with length {axis_len} is trimmed to fit the downsample factor "
+                  f"{factor}.")
+            slc = [slice(None)] * array.ndim
+            slc[axis] = slice(-(axis_len % factor))
+            array = array[tuple(slc)]
 
-    new_shape = list(array.shape)
-    new_shape[axis] //= factor
-    new_shape.insert(axis+1, factor)
-    array = array.reshape(new_shape).mean(axis=axis+1)
+        new_shape = list(array.shape)
+        new_shape[axis] //= factor
+        new_shape.insert(axis+1, factor)
+        array = array.reshape(new_shape).mean(axis=axis+1)
     return array
 
 
@@ -56,6 +58,8 @@ if __name__ == '__main__':
                       help="As -s but only used for plotting.")
     parser.add_option('-g', '--pguess', action='store_true',
                       help="Plot the guessed functions")
+    parser.add_option('-y', '--yes', action='store_true',
+                      help="Automatically give y for all questions.")
 
     options, args = parser.parse_args()
 
@@ -72,7 +76,6 @@ if __name__ == '__main__':
     tfit = options.tfit
     ptavg = options.ptavg
     psubb = options.psubb
-    plot_guess = options.pguess
 
     # getting the basename of the observation and pulse IDs
     basename = options.infile
@@ -195,7 +198,7 @@ if __name__ == '__main__':
                         model.fixed[a] = True
 
             # Plot the guess
-            if plot_guess:
+            if options.pguess:
                 low_res_waterfaller = ds(ds(waterfall, psubb), ptavg, axis=1)
                 fitter.plot_burst_windows(ds(times, ptavg), ds(freqs, psubb), low_res_waterfaller,
                                           model, ncontour=8, res_plot=True, vlines=start_stop)
@@ -223,7 +226,11 @@ if __name__ == '__main__':
                 res_fig.savefig(f'{basename}_{pulse_id}_fit_residuals')
             plt.show()
 
-            answer = input("Are you happy with the fit y/n/skip/fix? ")
+            if options.yes:
+                answer = 'y'
+            else:
+                answer = input("Are you happy with the fit y/n/skip/fix? ")
+
             if (answer == 'y') and use_standard_2D_gaussian:
                 use_standard_2D_gaussian = False
 
