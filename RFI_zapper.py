@@ -68,7 +68,8 @@ class identify_bursts(object):
                                height_ratios=[0.5,]*(rows-1) + [2,],
                                width_ratios=[5,] + [1,]*(cols-1))
 
-        fig = plt.figure(figsize=(16, 10))
+        fig = plt.figure('Identify bursts', figsize=(16, 10))
+        #plt.title()
         self.ax_data = plt.subplot(gs[2])  # dynamic spectrum
         self.ax_ts = plt.subplot(gs[0], sharex=self.ax_data)  # time series
         self.ax_spec = plt.subplot(gs[-1], sharey=self.ax_data)  # spectrum
@@ -84,11 +85,19 @@ class identify_bursts(object):
         y_range = spectrum.max() - spectrum.min()
         self.ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
 
-        self.data_plot = self.ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(), origin='upper',
-                       aspect='auto')
+        self.data_plot = self.ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(),
+                                             origin='upper', aspect='auto')
+
+        fig.add_subplot(self.ax_data)
+        fig.add_subplot(self.ax_ts)
+        fig.add_subplot(self.ax_spec)
+
+        plt.tight_layout()
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         self.keyPress = self.canvas.mpl_connect('key_press_event', self.onKeyPress)
+
+        plt.show()
         #indices = np.array(self.peak_times).argsort()
         #self.peak_times = list(np.array(self.peak_times)[indices])  # I guess this is too late
         #self.peak_amps = list(np.array(self.peak_amps)[indices])
@@ -182,7 +191,7 @@ class offpulse(object):
         self.lines.pop(x).remove()
 
     def onKeyPress(self, event):
-        if event.key == 'x':
+        if event.key  in ('x', 'u'):
             self.x = True
         if event.key == 'y':
             if self.lines['burst']:
@@ -190,7 +199,7 @@ class offpulse(object):
                 plt.draw()
 
     def onKeyRelease(self, event):
-        if event.key == 'x':
+        if event.key  in ('x', 'u'):
             self.x = False
 
     def onpress(self, event):
@@ -309,6 +318,8 @@ class RFI(object):
         fig.add_subplot(self.ax1)
         fig.add_subplot(self.ax4)
         fig.add_subplot(self.ax3)
+
+        plt.tight_layout()
 
         self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         self.crel = self.canvas.mpl_connect('button_release_event', self.onrel)
@@ -437,6 +448,8 @@ if __name__ == '__main__':
                       help="Give a pulse id to process only this pulse.")
     parser.add_option('-a', '--autoflag', action='store_false', default=True,
                       help="Do not autoflag channels.")
+    parser.add_option('-b', '--burst_position', action='store_true', default=False,
+                      help="Only change the burst positions.")
 
     options, args = parser.parse_args()
 
@@ -480,6 +493,7 @@ if __name__ == '__main__':
                                           ('Guesses', 't_cent'),
                                           ('Guesses', 'f_cent')])
         prop_df = pd.DataFrame(index=index, columns=cols, dtype=np.float)
+        prop_df.insert(1, ('General', 'Dropouts'), False)
 
     print(prop_df)
     in_hdf5_file = f'../{in_hdf5_file}'
@@ -517,96 +531,95 @@ if __name__ == '__main__':
         else:
             initial_mask = None
 
+        offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
+
         #total_N=fits.specinfo.N / tavg
         t_samp = fits.specinfo.dt * tavg
         freqs = fits.frequencies
         tot_freq = fits.specinfo.num_channels
         #total_N = int(100e-3 / (t_samp * tavg))
 
-        rows = 2
-        cols = 3
-        fig = plt.figure(figsize=(16, 10))
-        gs = gridspec.GridSpec(rows, cols, wspace=0., hspace=0.,
-                               height_ratios=[0.5,]*(rows-1) + [2,],
-                               width_ratios=[5,] + [1,]*(cols-1))
-
         # Load data
         data, _, peak_bin = import_fil_fits.fits_to_np(filename, dm=dm, maskfile=initial_mask,
                                                            AO=True, hdf5=in_hdf5_file,
                                                            index=pulse_id, tavg=tavg)
-        # Correct the bandpass already, but plot the real spectrum
-        spectrum = np.mean(data.data, axis=1)
-        data.data[:] -= spectrum[:, np.newaxis]
-        nonzero_chans = (data.data != 0.).any(axis=1)  # To avoid deviding by zero
-        data.data[nonzero_chans] /= np.std(data.data[nonzero_chans], axis=1)[:, np.newaxis]
+        if not options.burst_position:
+            rows = 2
+            cols = 3
+            fig = plt.figure('RFI zapper', figsize=(16, 10))
+            gs = gridspec.GridSpec(rows, cols, wspace=0., hspace=0.,
+                                   height_ratios=[0.5,]*(rows-1) + [2,],
+                                   width_ratios=[5,] + [1,]*(cols-1))
+            # Correct the bandpass already, but plot the real spectrum
+            spectrum = np.mean(data.data, axis=1)
+            data.data[:] -= spectrum[:, np.newaxis]
+            nonzero_chans = (data.data != 0.).any(axis=1)  # To avoid deviding by zero
+            data.data[nonzero_chans] /= np.std(data.data[nonzero_chans], axis=1)[:, np.newaxis]
 
-        # Make figure and define offpulse region.
-        offpulse_prof = offpulse(data, gs, t_samp, peak_bin, initial_mask=initial_mask)
-        dyn_spec = offpulse_prof.dyn_spec
-        spec = offpulse_prof.spec
-        prof = offpulse_prof.ax2plot
-        ax2 = offpulse_prof.axes
-        stat = offpulse_prof.stat
+            # Make figure and define offpulse region.
+            offpulse_prof = offpulse(data, gs, t_samp, peak_bin, initial_mask=initial_mask)
+            dyn_spec = offpulse_prof.dyn_spec
+            spec = offpulse_prof.spec
+            prof = offpulse_prof.ax2plot
+            ax2 = offpulse_prof.axes
+            stat = offpulse_prof.stat
 
-        # instructions
-        print("Click and drag on the dynamic spectrum to identify frequency channels to mask.\n"
-              "Hold x or u and click on the profile and drag to identify regions to be excluded "
-              "from the bandpass calibration.\n"
-              "Click y to remove this selection.\n"
-              "Click r at any time to refresh the plot and lower the threshold for the pink "
-              "points (incase there is too much pink points for example).")
-        ithres = 0.
-        RFImask = RFI(data, spectrum, gs, prof, dyn_spec, spec, stat, ithres, ax2, tavg,
-                      initial_mask=initial_mask, auto_flag=auto_flag)
-        plt.show()
+            # instructions
+            print("Click and drag on the dynamic spectrum to identify frequency channels to mask.\n"
+                  "Hold x or u and click on the profile and drag to identify regions to be excluded "
+                  "from the bandpass calibration.\n"
+                  "Click y to remove this selection.\n"
+                  "Click r at any time to refresh the plot and lower the threshold for the pink "
+                  "points (incase there is too much pink points for example).")
+            ithres = 0.
+            RFImask = RFI(data, spectrum, gs, prof, dyn_spec, spec, stat, ithres, ax2, tavg,
+                          initial_mask=initial_mask, auto_flag=auto_flag)
+            plt.show()
 
-        # Save the maskfile already
-        mask_chans = np.array(RFImask.mask_chan)
-        maskfile = '%s_%s_mask.pkl' % (basename, pulse_id)
-        with open(maskfile, 'wb') as fmask:
-            pickle.dump(mask_chans, fmask)
+            # Save the maskfile already
+            mask_chans = np.array(RFImask.mask_chan)
+            maskfile = '%s_%s_mask.pkl' % (basename, pulse_id)
+            with open(maskfile, 'wb') as fmask:
+                pickle.dump(mask_chans, fmask)
+            data.mask[mask_chans] = True
 
-        profile = RFImask.final_prof
+            profile = RFImask.final_prof
 
-        begin_times = np.array(offpulse_prof.begin_times)
-        end_times = np.array(offpulse_prof.end_times)
-        total_N = len(profile)
+            begin_times = np.array(offpulse_prof.begin_times)
+            end_times = np.array(offpulse_prof.end_times)
+            total_N = len(profile)
 
-        # Save the offpulse as if it was not downsampled
-        if tavg != 1:
-            total_N *= tavg
-            begin_times *= tavg
-            end_times *= tavg
+            # Save the offpulse as if it was not downsampled
+            if tavg != 1:
+                total_N *= tavg
+                begin_times *= tavg
+                end_times *= tavg
 
-        off_pulse = np.ones(total_N, dtype=np.bool)
-        if begin_times.size == 0:
-            raise ValueError("Warning: you have not defined the off burst region")
-        if len(begin_times) != len(end_times):
-            raise ValueError("The number of begin and end times doesn't match, make sure to hold "
-                             "x")
-        else:
-            print(f"Excluding {begin_times.size} windows")
-            print(begin_times, end_times)
-            for begin_time, end_time in zip(begin_times, end_times):
-                if begin_time < end_time:
-                    off_pulse[begin_time:end_time] = False
-                else:
-                    off_pulse[begin_time:end_time:-1] = False
+            off_pulse = np.ones(total_N, dtype=np.bool)
+            if begin_times.size == 0:
+                raise ValueError("Warning: you have not defined the off burst region")
+            if len(begin_times) != len(end_times):
+                raise ValueError("The number of begin and end times doesn't match, make sure to hold "
+                                 "x")
+            else:
+                print(f"Excluding {begin_times.size} windows")
+                print(begin_times, end_times)
+                for begin_time, end_time in zip(begin_times, end_times):
+                    if begin_time < end_time:
+                        off_pulse[begin_time:end_time] = False
+                    else:
+                        off_pulse[begin_time:end_time:-1] = False
 
-        #numchan = np.zeros_like(RFImask.mask_chan)
-        #numchan+=tot_freq
-
-        if begin_times.size > 0:
-            offpulsefile = '%s_%s_offpulse_time.pkl' % (basename, pulse_id)
-            with open(offpulsefile, 'wb') as foff:
-                pickle.dump(off_pulse, foff)
+            if begin_times.size > 0:
+                with open(offpulsefile, 'wb') as foff:
+                    pickle.dump(off_pulse, foff)
 
         print("Please click where each sub-burst peak of the main burst is.")
         print("Use the keys i and u to downsample and y and t to subband.")
-        data.mask[mask_chans] = True
         data = import_fil_fits.bandpass_calibration(data, offpulsefile, tavg=tavg, AO=True)
         burst_id = identify_bursts(data, t_samp, favg, peak_bin)
-        plt.show()
+
+        plt.close('all')
 
         n_subbursts = len(burst_id.peak_times)
         DMs = n_subbursts*[dm]
@@ -624,7 +637,6 @@ if __name__ == '__main__':
         while answer == 'y':
             print("Please click where each sub-burst peak of the next burst is.")
             burst_id = identify_bursts(data, t_samp, favg, peak_bin)
-            plt.show()
 
             n_subbursts = len(burst_id.peak_times)
             for sb in range(n_subbursts):
@@ -651,7 +663,15 @@ if __name__ == '__main__':
         for idx1, idx2, dm, amp, time, freq in zip(ind1, ind2, DMs, amps, peak_times, peak_freqs):
             prop_df.loc[(idx1, idx2), cols_to_write] = dm, amp, time, freq
 
+        answer_drops = input("Is the burst affected by dropouts? (y/n) ")
+        if answer_drops == 'y':
+            prop_df.loc[str(pulse_id), ('General','Dropouts')] = True
+        else:
+            prop_df.loc[str(pulse_id), ('General','Dropouts')] = False
+
         # Print from the added pulse to the end
         added_index = (prop_df.index.get_level_values(0)==str(pulse_id)).nonzero()[0][0]
         print(prop_df.iloc[added_index:])
-        prop_df.to_hdf('%s_burst_properties.hdf5' % basename, 'pulses')
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+            prop_df.to_hdf('%s_burst_properties.hdf5' % basename, 'pulses')
