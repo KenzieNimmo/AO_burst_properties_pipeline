@@ -7,6 +7,7 @@ import numpy as np
 #sys.path.append('/home/jjahns/Bursts/AO_burst_properties_pipeline/')
 import os
 import optparse
+import warnings
 import pandas as pd
 import matplotlib.pyplot as plt
 import import_fil_fits
@@ -224,11 +225,11 @@ if __name__ == '__main__':
                 corr_fig.savefig(f'{basename}_{pulse_id}_correlation')
                 fig.savefig(f'{basename}_{pulse_id}_fit')
                 res_fig.savefig(f'{basename}_{pulse_id}_fit_residuals')
-            plt.show()
 
             if options.yes:
                 answer = 'y'
             else:
+                plt.show()
                 answer = input("Are you happy with the fit y/n/skip/fix? ")
 
             if (answer == 'y') and use_standard_2D_gaussian:
@@ -301,6 +302,7 @@ if __name__ == '__main__':
             else:
                 print("Please provide an answer y or n.")
 
+        plt.close('all')
         os.chdir('..')
 
         if answer == 'skip':
@@ -332,5 +334,7 @@ if __name__ == '__main__':
         pulses.loc[pulse_id, ('General', 'downsampling')] = tavg
         pulses.loc[pulse_id, ('General', 'subbanding')] = subb
 
-        pulses.to_hdf(out_hdf5_file, 'pulses')
-        print(pulses)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+            pulses.to_hdf(out_hdf5_file, 'pulses')
+        #print(pulses)
