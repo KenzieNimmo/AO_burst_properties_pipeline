@@ -121,8 +121,8 @@ if __name__ == '__main__':
         freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')] // subb
 
         # Define the window to be shown.
-        begin_samp = int(time_guesses.min() - 20e-3 / (tavg * tsamp))
-        end_samp = int(time_guesses.max() + 20e-3 / (tavg * tsamp))
+        begin_samp = int(time_guesses.min() - 30e-3 / (tavg * tsamp))
+        end_samp = int(time_guesses.max() + 30e-3 / (tavg * tsamp))
 
         waterfall, t_ref, _ = import_fil_fits.fits_to_np(
             filename, dm=dm, maskfile=maskfile, AO=True, smooth_val=smooth,
@@ -198,8 +198,8 @@ if __name__ == '__main__':
                     for a in angles:
                         model.fixed[a] = True
 
-            # Plot the guess
-            if options.pguess:
+            # Plot the guess (only once)
+            if options.pguess and use_standard_2D_gaussian:
                 low_res_waterfaller = ds(ds(waterfall, psubb), ptavg, axis=1)
                 fitter.plot_burst_windows(ds(times, ptavg), ds(freqs, psubb), low_res_waterfaller,
                                           model, ncontour=8, res_plot=True, vlines=start_stop)

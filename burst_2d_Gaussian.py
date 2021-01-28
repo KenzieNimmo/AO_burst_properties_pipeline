@@ -113,7 +113,7 @@ def report_Gauss_parameters(best_gauss, fitter, verbose=False):
         corr=np.array(cov_mat)
         corr/=bunc
         corr=corr.T/bunc
-        plt.imshow(corr)
+        plt.imshow(corr, vmin=-1, vmax=1)
         plt.colorbar()
         plt.title('Correlation matrix')
         plt.xticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
