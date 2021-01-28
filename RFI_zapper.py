@@ -57,6 +57,7 @@ class identify_bursts(object):
         self.tavg = 1
         self.favg = favg
         self.arr = arr
+        self.vmin_fac = 1.
         #arr = ds(arr, factor=favg, axis=0)
         profile = np.sum(arr, axis=0)
         spectrum = np.sum(arr, axis=1)
@@ -88,9 +89,10 @@ class identify_bursts(object):
         self.data_plot = self.ax_data.imshow(arr.filled(0), vmin=arr.min(), vmax=arr.max(),
                                              origin='upper', aspect='auto')
 
-        fig.add_subplot(self.ax_data)
-        fig.add_subplot(self.ax_ts)
-        fig.add_subplot(self.ax_spec)
+        plt.colorbar(self.data_plot)
+        #fig.add_subplot(self.ax_data)
+        #fig.add_subplot(self.ax_ts)
+        #fig.add_subplot(self.ax_spec)
 
         plt.tight_layout()
 
@@ -110,7 +112,7 @@ class identify_bursts(object):
             self.peak_times.append(x1)
             self.peak_freqs.append(y1)
             #maxval = np.max(self.arr[:, int(x1)])
-            meanval = np.mean(self.arr[y1-3:y1+4, int(x1)-3:int(x1)+4])
+            meanval = np.mean(self.arr[y1-5:y1+6, int(x1)-5:int(x1)+6])
             self.peak_amps.append(meanval)  # correct for downsampling
             self.ax_data.scatter(x1, y1, lw=1, color='r', marker='x', s=100,
                                  zorder=10)
@@ -119,30 +121,36 @@ class identify_bursts(object):
     def onKeyPress(self, event):
         if event.key == 'i':
             self.tavg *= 2
-        if event.key == 'y':
+        elif event.key == 'y':
             self.favg *= 2
-        if event.key == 'u':
+        elif event.key == 'u':
             if self.tavg > 1:
                 self.tavg //= 2
-        if event.key == 't':
+        elif event.key == 't':
             if self.favg > 1:
                 self.favg //= 2
+        elif event.key == 'e':
+            self.vmin_fac -= .1
+            if self.vmin_fac < .1:
+                self.vmin_fac = 1.
 
         arr = ds(ds(self.arr, factor=self.favg), factor=self.tavg, axis=1)
-        profile = np.sum(arr, axis=0)
-        spectrum = np.sum(arr, axis=1)
+        if event.key in 'iyut':
+            profile = np.sum(arr, axis=0)
+            spectrum = np.sum(arr, axis=1)
 
-        # Replot.
-        self.ts_plot.set_data(np.arange(profile.shape[0]*self.tavg, step=self.tavg), profile)
-        y_range = profile.max() - profile.min()
-        self.ax_ts.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
+            # Replot.
+            self.ts_plot.set_data(np.arange(profile.shape[0]*self.tavg, step=self.tavg), profile)
+            y_range = profile.max() - profile.min()
+            self.ax_ts.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
 
-        self.spec_plot.set_data(spectrum, np.arange(spectrum.shape[0]*self.favg, step=self.favg))
-        y_range = spectrum.max() - spectrum.min()
-        self.ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
+            self.spec_plot.set_data(spectrum, np.arange(spectrum.shape[0]*self.favg, step=self.favg))
+            y_range = spectrum.max() - spectrum.min()
+            self.ax_spec.set_xlim(spectrum.min() - y_range * 0.1, spectrum.max() + y_range * 0.1)
 
-        self.data_plot.set_data(arr.filled(0))
-        self.data_plot.set_clim(vmin=arr.min(), vmax=arr.max())
+            self.data_plot.set_data(arr.filled(0))
+
+        self.data_plot.set_clim(vmin=self.vmin_fac*arr.min(), vmax=arr.max())
         plt.draw()
 
 
@@ -306,14 +314,9 @@ class RFI(object):
         mask[self.mask_chan] = True
         self.normal_deviation = np.ma.masked_where(mask, self.normal_deviation)
         self.arr = arr
-        if auto_flag:
-            norm_thres = find_upper_limit(self.normal_deviation.compressed(), threshold=5.)
-            bad_chans = self.normal_deviation > norm_thres
-            self.arr.mask[bad_chans] = True
-            self.normal_deviation.mask[bad_chans] = True
-            self.mask_chan.extend((~mask & bad_chans).nonzero()[0])
 
-            self.ax4.axvline(norm_thres, color='r')
+        if auto_flag:
+            self.do_auto_flag()
 
         fig.add_subplot(self.ax1)
         fig.add_subplot(self.ax4)
@@ -328,6 +331,16 @@ class RFI(object):
         self.x = False
         self.r = False
 
+    def do_auto_flag(self):
+        mask = self.normal_deviation.mask.copy()
+        norm_thres = find_upper_limit(self.normal_deviation.compressed(), threshold=5.)
+        bad_chans = self.normal_deviation > norm_thres
+        self.arr.mask[bad_chans] = True
+        self.normal_deviation.mask[bad_chans] = True
+        self.mask_chan.extend((~mask & bad_chans).nonzero()[0])
+
+        self.ax4.axvline(norm_thres, color='r')
+
     def onKeyPress(self, event):
         if event.key in ('x', 'u'):
             self.x = True
@@ -339,6 +352,8 @@ class RFI(object):
             self.ax1plot.set_clim(vmin=np.amin(arr), vmax=threshold)
             self.cmap.set_over(color='pink')
             plt.draw()
+        if event.key == 'a':
+            self.do_auto_flag()
 
     def onKeyRelease(self, event):
         if event.key in ('x', 'u'):
@@ -481,7 +496,6 @@ if __name__ == '__main__':
     tavg = options.tavg
     favg = options.favg
     auto_flag = options.autoflag
-    print(auto_flag)
 
     prop_file = f'{basename}_burst_properties.hdf5'
     if os.path.isfile(prop_file):
@@ -495,7 +509,7 @@ if __name__ == '__main__':
         prop_df = pd.DataFrame(index=index, columns=cols, dtype=np.float)
         prop_df.insert(1, ('General', 'Dropouts'), False)
 
-    print(prop_df)
+    #print(prop_df)
     in_hdf5_file = f'../{in_hdf5_file}'
 
     for pulse_id in pulses:
@@ -570,7 +584,8 @@ if __name__ == '__main__':
                   "from the bandpass calibration.\n"
                   "Click y to remove this selection.\n"
                   "Click r at any time to refresh the plot and lower the threshold for the pink "
-                  "points (incase there is too much pink points for example).")
+                  "points (incase there is too much pink points for example).\n"
+                  "Click a to autoflag.")
             ithres = 0.
             RFImask = RFI(data, spectrum, gs, prof, dyn_spec, spec, stat, ithres, ax2, tavg,
                           initial_mask=initial_mask, auto_flag=auto_flag)
@@ -615,10 +630,9 @@ if __name__ == '__main__':
                     pickle.dump(off_pulse, foff)
 
         print("Please click where each sub-burst peak of the main burst is.")
-        print("Use the keys i and u to downsample and y and t to subband.")
+        print("Use the keys i and u to downsample and y, t to subband and e to lower vmin.")
         data = import_fil_fits.bandpass_calibration(data, offpulsefile, tavg=tavg, AO=True)
         burst_id = identify_bursts(data, t_samp, favg, peak_bin)
-
         plt.close('all')
 
         n_subbursts = len(burst_id.peak_times)
@@ -637,6 +651,7 @@ if __name__ == '__main__':
         while answer == 'y':
             print("Please click where each sub-burst peak of the next burst is.")
             burst_id = identify_bursts(data, t_samp, favg, peak_bin)
+            plt.close('all')
 
             n_subbursts = len(burst_id.peak_times)
             for sb in range(n_subbursts):
