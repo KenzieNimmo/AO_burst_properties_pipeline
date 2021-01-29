@@ -230,7 +230,7 @@ if __name__ == '__main__':
                 answer = 'y'
             else:
                 plt.show()
-                answer = input("Are you happy with the fit y/n/skip/fix? ")
+                answer = input("Are you happy with the fit y/n/skip/fix/fb? ")
 
             if (answer == 'y') and use_standard_2D_gaussian:
                 use_standard_2D_gaussian = False
@@ -243,14 +243,10 @@ if __name__ == '__main__':
                 pulses.loc[pulse_id, ('2D Gaussian', 't_cent_e / s')] = bestfit_errors[:, 1] / 1e3
                 pulses.loc[pulse_id, ('2D Gaussian', 't_std / ms')] = bestfit_params[:, 3]
                 pulses.loc[pulse_id, ('2D Gaussian', 't_std_e / ms')] = bestfit_errors[:, 3]
-                pulses.loc[pulse_id, ('2D Gaussian', 'f_cent / MHz')] = (
-                    f_ref - bestfit_params[:, 2] * fsamp * subb)
-                pulses.loc[pulse_id, ('2D Gaussian', 'f_cent_e / MHz')] = (bestfit_errors[:, 2]
-                                                                           * fsamp * subb)
-                pulses.loc[pulse_id, ('2D Gaussian', 'f_std / MHz')] = (bestfit_params[:, 4]
-                                                                        * fsamp * subb)
-                pulses.loc[pulse_id, ('2D Gaussian', 'f_std_e / MHz')] = (bestfit_errors[:, 4]
-                                                                          * fsamp * subb)
+                pulses.loc[pulse_id, ('2D Gaussian', 'f_cent / MHz')] = bestfit_params[:, 2]
+                pulses.loc[pulse_id, ('2D Gaussian', 'f_cent_e / MHz')] = bestfit_errors[:, 2]
+                pulses.loc[pulse_id, ('2D Gaussian', 'f_std / MHz')] = bestfit_params[:, 4]
+                pulses.loc[pulse_id, ('2D Gaussian', 'f_std_e / MHz')] = bestfit_errors[:, 4]
                 pulses.loc[pulse_id, ('2D Gaussian', 'Angle')] = bestfit_params[:, 5]
                 pulses.loc[pulse_id, ('2D Gaussian', 'Angle e')] = bestfit_errors[:, 5]
                 pulses.loc[pulse_id, ('2D Gaussian', 'Chi^2')] = chisq
@@ -264,21 +260,27 @@ if __name__ == '__main__':
                     print("The angle is fixed now.")
                 else:
                     print("The angle is a fittable parameter again.")
-            elif answer == 'n':
-                guessvals = []
-                while len(guessvals) not in [n_sbs*i for i in range(1, 5)]:
-                    current_gusses = np.concatenate((t_std_guess, freq_std_guess, amp_guesses,
-                                                     freq_peak_guess))
-                    current_gusses = str(list(current_gusses))[1:-1].replace(' ', '')
-                    secondanswer = input("Give the intial guesses in ms and MHz in the"
-                                         "form t_std_sb1,t_std_sb2,...,[f_std_sb1,"
-                                         "...[amp_sb1,amp_sb2,...,[f_peak_sb1,...,[t_peak_sb1,...]]]] "
-                                         f"with a multiple of {n_sbs} guesses in "
-                                         f"total. The current values are {current_gusses}: ")
-                    try:
-                        guessvals = [float(x.strip()) for x in secondanswer.split(',')]
-                    except:
-                        print("Wrong format")
+            elif answer == 'n' or answer == 'fb':
+                if answer == 'n':
+                    guessvals = []
+                    while len(guessvals) not in [n_sbs*i for i in range(1, 5)]:
+                        current_gusses = np.concatenate((t_std_guess, freq_std_guess, amp_guesses,
+                                                         freq_peak_guess))
+                        current_gusses = str(list(current_gusses))[1:-1].replace(' ', '')
+                        secondanswer = input("Give the intial guesses in ms and MHz in the"
+                                             "form t_std_sb1,t_std_sb2,...,[f_std_sb1,"
+                                             "...[amp_sb1,amp_sb2,...,[f_peak_sb1,...,[t_peak_sb1"
+                                             f",...]]]] with a multiple of {n_sbs} guesses in "
+                                             f"total. The current values are {current_gusses}: ")
+                        try:
+                            guessvals = [float(x.strip()) for x in secondanswer.split(',')]
+                        except:
+                            print("Wrong format")
+                else:
+                    # Feed back the fit results as guesses
+                    guessvals = (list(bestfit_params[:, 3]) + list(bestfit_params[:, 4])
+                                 + list(bestfit_params[:, 0]) + list(bestfit_params[:, 2]))
+                    time_guesses = bestfit_params[:, 1]
 
                 # Save guesses.
                 guessvals = np.array(guessvals)
@@ -307,7 +309,9 @@ if __name__ == '__main__':
 
         if answer == 'skip':
             # Save the guesses anyway
-            pulses.to_hdf(out_hdf5_file, 'pulses')
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+                pulses.to_hdf(out_hdf5_file, 'pulses')
             continue
 
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Amp')] = bestfit_params[:, 0]
@@ -317,14 +321,10 @@ if __name__ == '__main__':
         pulses.loc[pulse_id, ('Drifting Gaussian', 't_cent_e / s')] = bestfit_errors[:, 1] / 1e3
         pulses.loc[pulse_id, ('Drifting Gaussian', 't_std / ms')] = bestfit_params[:, 3]
         pulses.loc[pulse_id, ('Drifting Gaussian', 't_std_e / ms')] = bestfit_errors[:, 3]
-        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_cent / MHz')] = (
-            f_ref - bestfit_params[:, 2] * fsamp * subb)
-        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_cent_e / MHz')] = (
-            bestfit_errors[:, 2] * fsamp * subb)
-        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_std / MHz')] = (
-            bestfit_params[:, 4] * fsamp * subb)
-        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_std_e / MHz')] = (
-            bestfit_errors[:, 4] * fsamp * subb)
+        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_cent / MHz')] = bestfit_params[:, 2]
+        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_cent_e / MHz')] = bestfit_errors[:, 2]
+        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_std / MHz')] = bestfit_params[:, 4]
+        pulses.loc[pulse_id, ('Drifting Gaussian', 'f_std_e / MHz')] = bestfit_errors[:, 4]
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Drift / ms/MHz')] = bestfit_params[:, 5]
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Drift e / ms/MHz')] = bestfit_errors[:, 5]
         pulses.loc[pulse_id, ('Drifting Gaussian', 'Chi^2')] = chisq
@@ -333,6 +333,7 @@ if __name__ == '__main__':
         pulses.loc[pulse_id, ('General', 'f_ref / MHz')] = f_ref
         pulses.loc[pulse_id, ('General', 'downsampling')] = tavg
         pulses.loc[pulse_id, ('General', 'subbanding')] = subb
+        pulses.loc[pulse_id, ('General', 'tfit')] = tfit
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
