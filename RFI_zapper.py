@@ -669,6 +669,7 @@ if __name__ == '__main__':
         peak_times = np.array(peak_times) * tavg
         peak_freqs = np.array(peak_freqs)
         amps = np.array(amps) / np.sqrt(tavg)
+        amps[amps < 0] = 0.1
 
         peak_freqs = freqs[peak_freqs.astype(np.int)]
         os.chdir('..')
