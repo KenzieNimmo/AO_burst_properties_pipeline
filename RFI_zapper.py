@@ -601,7 +601,7 @@ if __name__ == '__main__':
             profile = RFImask.final_prof
 
             begin_times = np.array(offpulse_prof.begin_times)
-            end_times = np.array(offpulse_prof.end_times)
+            end_times = np.array(offpulse_prof.end_times) + 1  # Make it inclusive
             total_N = len(profile)
 
             # Save the offpulse as if it was not downsampled
