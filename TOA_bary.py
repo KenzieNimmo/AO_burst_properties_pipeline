@@ -85,7 +85,6 @@ if __name__ == '__main__':
     else:
         basename = args.infile_basename
 
-    #PULSES_TXT = 'pulse_nos.txt'
     in_hdf5_file = '%s_burst_properties.hdf5' % basename
 
     out_hdf5_file = in_hdf5_file
@@ -97,23 +96,23 @@ if __name__ == '__main__':
     #    not_processed = pulses.loc[(slice(None), 'sb1'), 'TOA / MJD'].isna()
     #    pulse_ids = pulse_ids[not_processed]
 
-    #pulses_arr = [8898]
-    #for pulse_id in pulse_ids:
     print(f"Finding the time of arrivals (barycentre corrected) of observation {basename}")
 
-    # time of pulse in file
-    t_burst = pulses['t_cent / s']  # in seconds
     # beginning MJD of file
-    obs_start = pulses['t_obs / MJD']  # MJD
+    obs_start = pulses[('General', 't_obs / MJD')]  # MJD
     # dm of burst
-    dm = pulses['DM']
+    dm = pulses[('General','DM')]
     # Reference Frequency, using the top of the band as reference (same as PRESTO and
     # spectra.dedisperse from psrfits.py)
-    ref_freq = pulses['f_ref / MHz']
+    ref_freq = pulses[('General', 'f_ref / MHz')]
 
-    toas_ref_freq, toas = barycorr(obs_start, t_burst, ref_freq, dm, FRB='R1', telescope='Arecibo')
+    for model_name in ['2D Gaussian','Drifting Gaussian']:
+        # time of pulse in file
+        t_burst = pulses[(model_name, 't_cent / s')]  # in seconds
 
-    pulses['TOA at f_ref / MJD'] = toas_ref_freq
-    pulses['TOA / MJD'] = toas
+        toas_ref_freq, toas = barycorr(obs_start, t_burst, ref_freq, dm, FRB='R1', telescope='Arecibo')
+
+        pulses[(model_name, 'TOA at f_ref / MJD')] = toas_ref_freq
+        pulses[(model_name, 'TOA / MJD')] = toas
 
     pulses.to_hdf(out_hdf5_file, 'pulses')
