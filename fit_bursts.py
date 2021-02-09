@@ -50,7 +50,7 @@ if __name__ == '__main__':
                            "given after -s.")
     parser.add_option('-p', '--pulse', type='str', default=None,
                       help="Give a pulse id to process only this pulse.")
-    parser.add_option('-f', '--tfit', dest='tfit', type='float', default=5,
+    parser.add_option('-f', '--tfit', dest='tfit', type='float',
                       help="Give the time before and after the burst in ms that should be used "
                       "for fitting.")
     parser.add_option('--ptavg', type='int', default=1,
@@ -74,7 +74,6 @@ if __name__ == '__main__':
 
     tavg = options.tavg
     subb = options.subb
-    tfit = options.tfit
     ptavg = options.ptavg
     psubb = options.psubb
 
@@ -108,7 +107,7 @@ if __name__ == '__main__':
 
         # Get some observation parameters
         fits = psrfits.PsrfitsFile(filename)
-        tsamp = fits.specinfo.dt
+        tsamp = fits.specinfo.dt * tavg
 
         # Name mask and offpulse file
         maskfile = '%s_%s_mask.pkl' % (basename, base_pulse)
@@ -121,8 +120,8 @@ if __name__ == '__main__':
         freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')] // subb
 
         # Define the window to be shown.
-        begin_samp = int(time_guesses.min() - 30e-3 / (tavg * tsamp))
-        end_samp = int(time_guesses.max() + 30e-3 / (tavg * tsamp))
+        begin_samp = int(time_guesses.min() - 30e-3 / tsamp)
+        end_samp = int(time_guesses.max() + 30e-3 / tsamp)
 
         waterfall, t_ref, _ = import_fil_fits.fits_to_np(
             filename, dm=dm, maskfile=maskfile, AO=True, smooth_val=smooth,
@@ -133,9 +132,18 @@ if __name__ == '__main__':
         waterfall = waterfall[:, begin_samp:end_samp]
         t_ref += begin_samp * tsamp
 
+        # Get time before and after the burst to be used for fitting.
+        if options.tfit:
+            tfit = options.tfit
+        elif (('General','tfit') in pulses.columns and
+              not np.isnan(pulses.loc[(pulse_id, 'sb1'), ('General','tfit')])):
+            tfit = pulses.loc[(pulse_id, 'sb1'), ('General','tfit')]
+        else:
+            tfit = 5
+
         fit_mask = np.zeros(waterfall.shape, dtype=np.bool)
-        fit_start = int(time_guesses.min() - begin_samp - tfit*1e-3/(tavg*tsamp))
-        fit_end = int(time_guesses.max() - begin_samp + tfit*1e-3/(tavg*tsamp))
+        fit_start = int(time_guesses.min() - begin_samp - tfit*1e-3/tsamp)
+        fit_end = int(time_guesses.max() - begin_samp + tfit*1e-3/tsamp)
         fit_mask[:, fit_start:fit_end] = True
         fit_mask = (fit_mask & ~waterfall.mask).astype(np.float)
 
@@ -146,7 +154,8 @@ if __name__ == '__main__':
             fit_mask = ds(fit_mask, factor=subb, axis=0)
             freqs = ds(freqs, factor=subb, axis=0)
 
-        times = np.arange(waterfall.shape[1]) * tsamp * tavg * 1e3  # in ms
+        # Get the times at the pixel centers in ms.
+        times = (np.arange(waterfall.shape[1]) * tsamp + tsamp/2) * 1e3
         start_stop = times[[fit_start, fit_end]]
 
         #waterfall = waterfall.data[~waterfall.mask[:,0]] # maskbool
@@ -157,7 +166,7 @@ if __name__ == '__main__':
         f_ref = fits.specinfo.hi_freq
 
         time_guesses -= begin_samp
-        time_guesses *= tavg*tsamp*1e3
+        time_guesses *= tsamp*1e3
 
         n_sbs = pulses.loc[pulse_id].shape[0]
         #freq_peak_guess = [freqs[freqs.shape[0]*2//5]] * n_sbs  # n_sbs * [int(512 / subb / 2.)]
