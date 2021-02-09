@@ -336,7 +336,7 @@ class RFI(object):
         norm_thres = find_upper_limit(self.normal_deviation.compressed(), threshold=5.)
         bad_chans = self.normal_deviation > norm_thres
         self.arr.mask[bad_chans] = True
-        self.normal_deviation.mask[bad_chans] = True
+        self.normal_deviation = np.ma.masked_where(bad_chans, self.normal_deviation)
         self.mask_chan.extend((~mask & bad_chans).nonzero()[0])
 
         self.ax4.axvline(norm_thres, color='r')
