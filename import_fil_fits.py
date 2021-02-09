@@ -150,7 +150,7 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None
         arr = np.ma.masked_where(mask, arr)
     else:
         mask = np.zeros(arr.shape, dtype=np.bool)
-        arr = np.ma.masked_where(mask, arr)
+        arr = np.ma.MaskedArray(arr, mask)
 
     if AO is True:
         # time in seconds of burst in cropped fits fileim
