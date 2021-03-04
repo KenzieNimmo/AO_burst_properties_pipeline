@@ -13,7 +13,7 @@ def get_bary(toas, source, location):
     times = time.Time(toas, format='mjd', scale='utc', location=location)
     ltt_bary = times.light_travel_time(source)  # time offset between barycentre and Earth
     toas_bary = times.tdb + ltt_bary
-    return toas_bary.value[0]
+    return toas_bary.value
 
 
 def barycorr(obs_start, burst_times, f_ref, dms, FRB='R1', telescope='Eff'):
