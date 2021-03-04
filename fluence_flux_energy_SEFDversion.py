@@ -10,6 +10,7 @@ import sys
 import optparse
 from presto import psrfits
 import pandas as pd
+from astropy import time, coordinates as coord, units as u, constants as const, AltAz
 import import_fil_fits
 
 #hardcoded fit values for SEFD at different frequencies
@@ -53,37 +54,36 @@ def SEFD(za, cf):
         print("Incorrect central frequency provided. Choose from 1155, 1310, 1375, 1415, 1550, 1610, 1666 MHz")
     return SEFD
 
-def get_SEFD(za,give_freq):
+def get_SEFD(za, give_freq):
     """
     za is the zenith angle
     give_freq is the central frequency in MHz from fit
     """
     #find the nearest frequencies with data surrounding the given freq
-    
-    if za<2 or za>20:
+
+    if za < 2 or za > 20:
         print("check ZA, out of range, errors on SEFD will likely be large")
-    nearest_frq1=min(frqs, key=lambda x:abs(x-give_freq))
-    if give_freq>nearest_frq1 and give_freq<1666:
-        nearest_frq2=frqs[frqs.index(nearest_frq1)+1]
-    elif give_freq<nearest_frq1 and give_freq>1155:
-        nearest_frq2=frqs[frqs.index(nearest_frq1)-1]
-    elif give_freq>1666:
+    nearest_frq1 = min(frqs, key=lambda x: abs(x-give_freq))
+    if give_freq >= nearest_frq1 and give_freq < 1666:
+        nearest_frq2 = frqs[frqs.index(nearest_frq1)+1]
+    elif give_freq < nearest_frq1 and give_freq >= 1155:
+        nearest_frq2 = frqs[frqs.index(nearest_frq1)-1]
+    elif give_freq > 1666:
         print('invalid freq, too high, using 1666 MHz')
-        return SEFD(za,1666)
-    elif give_freq<1155:
+        return SEFD(za, 1666)
+    elif give_freq < 1155:
         print('invalid freq, too low, using 1155 MHz')
-        return SEFD(za,1155)
-        
+        return SEFD(za, 1155)
 
     #interpolates a SEFD
-    wt1=np.linalg.norm(give_freq-nearest_frq1)/np.linalg.norm(nearest_frq1-nearest_frq2)
-    wt2=np.linalg.norm(give_freq-nearest_frq2)/np.linalg.norm(nearest_frq1-nearest_frq2)
-    vall=np.average([SEFD(za,nearest_frq1),SEFD(za,nearest_frq2)],weights=[wt2,wt1])
-    
-    return vall
-  
+    wt1 = np.linalg.norm(give_freq-nearest_frq1) / np.linalg.norm(nearest_frq1-nearest_frq2)
+    wt2 = np.linalg.norm(give_freq-nearest_frq2) / np.linalg.norm(nearest_frq1-nearest_frq2)
+    vall = np.average([SEFD(za, nearest_frq1), SEFD(za, nearest_frq2)], weights=[wt2, wt1])
 
-def radiometer(tsamp, bw, npol, cntr_freq,za):
+    return vall
+
+
+def radiometer(tsamp, bw, npol, cntr_freqs, za):
     """
     radiometer(tsamp, bw, npol, Tsys, G):
     tsamp is the time resolution in milliseconds
@@ -94,11 +94,11 @@ def radiometer(tsamp, bw, npol, cntr_freq,za):
     Tsys is the system temperature in K (typical value for Effelsberg = 20K)
     G is the telescope gain in K/Jy (typical value for Effelsberg = 1.54K/Jy)
     """
-    SEFD=get_SEFD(cntr_freq,za)
+    SEFD = np.array([get_SEFD(za, cntr_freq) for cntr_freq in cntr_freqs])
     return (SEFD) * (1 / np.sqrt((bw * 1.e6) * npol * tsamp * 1e-3))
 
 
-def fluence_flux(arr, bw, t_cent, width, tsamp, SEFD, offpulse):
+def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
     # (arr, bw, t_cent, width, width_error, tsamp, SEFD, offpulse):
     """
     fluence_flux(arr, bw, t_cent, width, tsamp, offpulse)
@@ -113,57 +113,35 @@ def fluence_flux(arr, bw, t_cent, width, tsamp, SEFD, offpulse):
     Then to convert to physical units (Jy ms), we use the radiometer equation.
     Also use same method to determine peak flux in physical units (Jy)
     """
+    #t_cent = t_cent / tsamp  # in bins
+    #width = width / tsamp  # in bins
 
-    with open(str(offpulse), 'rb') as f:
-        offtimes = pickle.load(f)
-
-    totalbins = arr.shape[1]  # number of bins
-    offtimes = offtimes[np.where(offtimes < totalbins)[0]]
-
-    print(offtimes)
-    t_cent = t_cent / tsamp  # in bins
-    # TODO: t_cent is with reference to the obsrvation start not the cutout
-    width = width / tsamp  # in bins
-
-    conv = 2.355
-    width = int((width * 2. / conv))
-    t_cent = int(t_cent)
+    #conv = 2.355
+    #width = int((width * 2. / conv))
+    #t_cent = int(t_cent)
 
     tsamp *= 1e3  # milliseconds
 
-    profile = np.sum(arr, axis=0)
-    spec = np.sum(arr[:, (t_cent - width):(t_cent + width)], axis=1)
-    offprof = np.sum(arr[:, offtimes], axis=0)
-    offspec = np.sum(arr[:, offtimes], axis=1)
-    mean = np.mean(offprof)
-    meanspec = np.mean(offspec)
-    offprof -= mean
-    profile -= mean
-    spec -= meanspec
-    std = np.std(offprof)
+    profile_burst = np.sum(waterfall, axis=0)
+    spec_burst = np.sum(waterfall, axis=1)
+# =============================================================================
+#
+#     plt.plot(profile, 'k')
+#     plt.axvline((t_cent - width), color='r')
+#     plt.axvline((t_cent + width), color='r')
+#
+#     plt.xlabel('Time bins')
+#     plt.ylabel('S/N')
+#     plt.savefig('burst_profile.pdf', format='pdf')
+#     plt.show()
+# =============================================================================
+    chan_radiometer = radiometer(tsamp, bw, 2, chan_freqs, za)
 
-    stdspec = np.std(offspec)
-    offprof /= std
-    profile /= std
-    spec /= stdspec
-
-    profile_burst = profile[(t_cent - width):(t_cent + width)]
-    spec_burst = spec
-
-    plt.plot(profile, 'k')
-    plt.axvline((t_cent - width), color='r')
-    plt.axvline((t_cent + width), color='r')
-
-    plt.xlabel('Time bins')
-    plt.ylabel('S/N')
-    plt.savefig('burst_profile.pdf', format='pdf')
-    plt.show()
-
-    fluence = np.sum(profile_burst * radiometer(tsamp, bw, 2, SEFD) * tsamp)  # fluence
+    fluence = np.sum(waterfall * chan_radiometer * tsamp) # fluence
     peakSNR = np.max(profile_burst)
-    flux = np.max(profile_burst * radiometer(tsamp, bw, 2, SEFD))  # peak flux density
-    prof_flux = profile * radiometer(tsamp, bw, 2, SEFD)
-    spec_flux = spec_burst * radiometer(tsamp, bw, 2, SEFD)
+    flux = np.max(profile_burst * radiometer(tsamp, bw, 2, chan_freqs))  # peak flux density
+    prof_flux = profile * radiometer(tsamp, bw, 2, chan_freqs)
+    spec_flux = spec_burst * radiometer(tsamp, bw, 2, chan_freqs)
 
     # assuming 20% error on SEFD dominates, even if you consider the errors on
     # width and add them in quadrature i.e.
@@ -255,30 +233,59 @@ if __name__ == '__main__':
         tsamp = fits.specinfo.dt
         freqs = fits.frequencies
         nchan = fits.specinfo.num_channels
-        fres = fits.specinfo.df
+        chan_bw = fits.specinfo.df
         bw = fits.specinfo.BW
 
-        t_cent = pulses.loc[burst_id, 't_cent / s']
-        t_std = pulses.loc[burst_id, 't_std / s']
-        dm = pulses.loc[(burst_id, 'sb1'), 'DM']
+        #t_cent = pulses.loc[burst_id, 't_cent / s']
+        #t_std = pulses.loc[burst_id, 't_std / s']
+        #
+        time_guesses = pulses.loc[burst_id, ('Guesses', 't_cent')]
+        #t_cent = pulses.loc[(burst_id, 'sb1'), ('Guesses', 't_cent')]
+        # Time before and after the burst in ms.
+        tfit = pulses.loc[(burst_id, 'sb1'), ('General', 'tfit')]
+        dm = pulses.loc[(burst_id, 'sb1'), ('General', 'DM')]
 
         waterfall, t, peak_bin = import_fil_fits.fits_to_np(
-            filename, dm=dm, maskfile=maskfile, bandpass=True, offpulse=offpulsefile, AO=True,
-            smooth_val=smooth, hdf5=orig_in_hdf5_file, index=burst_id)
+            filename, dm=dm, maskfile=maskfile, AO=True,
+            hdf5=orig_in_hdf5_file, index=burst_id)
+        waterfall = import_fil_fits.bandpass_calibration(waterfall, offpulsefile, tavg=1,
+                                                         AO=True, smooth_val=None, plot=False)
 
-        if options.SEFD is None:
-            if np.max(freqs) < 2000.:
-                print("Data is assumed to be L-band")
-                SEFD = 30 / 10.
-            if np.max(freqs) >= 2000.:
-                print("Data is assumed to be C-band")
-                SEFD = 28. / 6.
-        else:
-            SEFD = options.SEFD
+        window_start = int(time_guesses.min() - tfit*1e-3/tsamp)
+        widow_end = int(time_guesses.max() + tfit*1e-3/tsamp)
+
+        waterfall = waterfall[:, window_start:widow_end]
+
+# =============================================================================
+#         if options.SEFD is None:
+#             if np.max(freqs) < 2000.:
+#                 print("Data is assumed to be L-band")
+#                 SEFD = 30 / 10.
+#             if np.max(freqs) >= 2000.:
+#                 print("Data is assumed to be C-band")
+#                 SEFD = 28. / 6.
+#         else:
+#             SEFD = options.SEFD
+# =============================================================================
+
+        arecibo_coord = coord.EarthLocation.from_geodetic(
+            lon=-(66. + 45./60. + 11.1/3600.)*u.deg,  # arecibo geodetic coords in deg
+            lat=(18. + 20./60. + 36.6/3600.)*u.deg,
+            height=497.*u.m)
+
+        file_tstart = fits.specinfo.start_MJD[0]
+        guess_mjd = file_tstart + time_guesses.mean()*tsamp / (24 * 3600)
+        guess_mjd = time.Time(guess_mjd, format='mjd', scale='utc', location=arecibo_coord)
+
+        R1_coord = coord.SkyCoord("05:31:58.698", "+33:08:52.586", unit=(u.hourangle, u.deg),
+                                  frame='icrs', obstime=guess_mjd)
+        altaz = R1_coord.transform_to(AltAz(location=arecibo_coord))
+        za = 90 - altaz.alt.deg
+
+        fluence, flux, prof_flux, spec_flux, peakSNR, fluence_error = fluence_flux(
+                waterfall, bw=chan_bw, tsamp=tsamp, chan_freqs=freqs, za=za)
 
         for sb in pulses.loc[burst_id].index:
-            fluence, flux, prof_flux, spec_flux, peakSNR, fluence_error = fluence_flux(
-                waterfall, bw, t_cent.loc[sb], t_std.loc[sb], tsamp, SEFD, offpulsefile)
 
             print("Peak S/N", peakSNR)
             print("Fluence:", fluence, "+-", fluence_error, "Jy ms")
