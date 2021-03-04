@@ -289,7 +289,7 @@ class RFI(object):
                                        origin='upper',
                                        #interpolation='nearest',
                                        picker=True)
-        self.cmap.set_over(color='pink')
+        #self.cmap.set_over(color='pink')
         #self.cmap.set_bad(color='midnightblue')
         #self.ax1.set_xlim((peak_bin - (50e-3 / (tsamp * tavg))),
         #                  (peak_bin + (50e-3 / (tsamp * tavg))))
@@ -350,7 +350,7 @@ class RFI(object):
             self.ithres -= 0.005
             threshold = np.amax(arr) - (np.abs(np.amax(arr) - np.amin(arr)) * self.ithres)
             self.ax1plot.set_clim(vmin=np.amin(arr), vmax=threshold)
-            self.cmap.set_over(color='pink')
+            #self.cmap.set_over(color='pink')
             plt.draw()
         if event.key == 'a':
             self.do_auto_flag()
@@ -423,7 +423,7 @@ class RFI(object):
                 y_range = profile.max() - profile.min()
                 self.ax2.set_ylim(profile.min() - y_range * 0.1, profile.max() + y_range * 0.1)
 
-                self.cmap.set_over(color='pink')
+                #self.cmap.set_over(color='pink')
                 plt.draw()
                 if self.begin_chan[-1] > index2:
                     for i in range(len(np.arange(index2, self.begin_chan[-1] + 1, 1))):
@@ -691,3 +691,4 @@ if __name__ == '__main__':
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
             prop_df.to_hdf('%s_burst_properties.hdf5' % basename, 'pulses')
+
