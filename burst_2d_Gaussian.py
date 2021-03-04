@@ -183,7 +183,7 @@ def dynspec_3pan(xarr, yarr, data, vlim=(-1,-1), tslim=(-1,-1), bplim=(-1,-1), t
     T,F=np.meshgrid(xarr,yarr)
 
     #Plot data
-    ax1.pcolormesh(T, F, data.filled(0), vmin=vlim[0], vmax=vlim[1])
+    ax1.pcolormesh(T, F, data.filled(0), vmin=vlim[0], vmax=vlim[1], shading='auto')
     ax2.plot(xarr, tseries, 'y-')
     ax3.step(bandpass, yarr, 'y-')
 
