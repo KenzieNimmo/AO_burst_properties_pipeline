@@ -99,7 +99,6 @@ def radiometer(tsamp, bw, npol, cntr_freqs, za):
 
 
 def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
-    # (arr, bw, t_cent, width, width_error, tsamp, SEFD, offpulse):
     """
     fluence_flux(arr, bw, t_cent, width, tsamp, offpulse)
     arr is the burst dynamic spectrum
@@ -137,11 +136,13 @@ def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
 # =============================================================================
     chan_radiometer = radiometer(tsamp, bw, 2, chan_freqs, za)
 
-    fluence = np.sum(waterfall * chan_radiometer * tsamp) # fluence
+    prof_flux = np.sum(waterfall * chan_radiometer[:, np.newaxis], axis=0)
+
+    fluence = prof_flux * tsamp # fluence
     peakSNR = np.max(profile_burst)
-    flux = np.max(profile_burst * radiometer(tsamp, bw, 2, chan_freqs))  # peak flux density
-    prof_flux = profile * radiometer(tsamp, bw, 2, chan_freqs)
-    spec_flux = spec_burst * radiometer(tsamp, bw, 2, chan_freqs)
+    flux = np.max(prof_flux)  # peak flux density
+    #prof_flux = profile * radiometer(tsamp, bw, 2, chan_freqs)
+    #spec_flux = spec_burst * radiometer(tsamp, bw, 2, chan_freqs)
 
     # assuming 20% error on SEFD dominates, even if you consider the errors on
     # width and add them in quadrature i.e.
@@ -160,7 +161,7 @@ def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
 
     # fluence_error=np.sqrt(x)
 
-    return fluence, flux, prof_flux, spec_flux, peakSNR, fluence_error
+    return fluence, flux, peakSNR, fluence_error
 
 
 def energy_iso(fluence, distance_lum):
@@ -282,7 +283,7 @@ if __name__ == '__main__':
         altaz = R1_coord.transform_to(AltAz(location=arecibo_coord))
         za = 90 - altaz.alt.deg
 
-        fluence, flux, prof_flux, spec_flux, peakSNR, fluence_error = fluence_flux(
+        fluence, flux, peakSNR, fluence_error = fluence_flux(
                 waterfall, bw=chan_bw, tsamp=tsamp, chan_freqs=freqs, za=za)
 
         for sb in pulses.loc[burst_id].index:
