@@ -50,8 +50,8 @@ def filterbank_to_np(filename, dm=None, maskfile=None,
     return arr
 
 
-def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None,
-               AO=False, hdf5=None, index=None, plot=False, tavg=1, t_cut=200e-3):
+def fits_to_np(filename, dm=None, maskfile=None, AO=False, hdf5=None, index=None, plot=False,
+               tavg=1, t_cut=200e-3):
     """
     Read psrfits file and output a numpy array of the data
     To dedisperse, give a dm value.
@@ -129,9 +129,6 @@ def fits_to_np(filename, dm=None, maskfile=None, bandpass=False, smooth_val=None
         spec.trim(max_shift)
 
     arr = spec.data
-
-    if smooth_val == 1:
-        smooth_val = None
 
     if tavg > 1:
         nsamples = arr.shape[1]
