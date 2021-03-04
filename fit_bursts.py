@@ -178,6 +178,8 @@ if __name__ == '__main__':
         if ('Guesses', 't_std') in pulses.columns:
             if not pulses.loc[pulse_id, ('Guesses', 't_std')].isna().loc['sb1']:
                 t_std_guess = pulses.loc[pulse_id, ('Guesses', 't_std')].to_numpy()
+        if ('Guesses', 'f_std') in pulses.columns:
+            if not pulses.loc[pulse_id, ('Guesses', 'f_std')].isna().loc['sb1']:
                 freq_std_guess = pulses.loc[pulse_id, ('Guesses', 'f_std')].to_numpy()
 
         use_standard_2D_gaussian = True
