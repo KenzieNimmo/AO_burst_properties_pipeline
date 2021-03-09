@@ -2,7 +2,6 @@
 Filterbank of burst -> fluence and peak flux density of the burst
 Kenzie Nimmo 2020
 """
-
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
@@ -54,6 +53,7 @@ def SEFD(za, cf):
         print("Incorrect central frequency provided. Choose from 1155, 1310, 1375, 1415, 1550, 1610, 1666 MHz")
     return SEFD
 
+
 def get_SEFD(za, give_freq):
     """
     za is the zenith angle
@@ -99,41 +99,23 @@ def radiometer(tsamp, bw, npol, cntr_freqs, za):
 
 
 def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
-    """
-    fluence_flux(arr, bw, t_cent, width, tsamp, offpulse)
-    arr is the burst dynamic spectrum
-    bw is the bandwidth in MHz
-    t_cent is the peak time of the burst found using the 2D Gaussian fit (or by eye)
-    width is the FWHM duration of the burst found using the 2D Gaussian fit (or by eye)
-    tsamp is the sampling time of the data in seconds
-    offpulse is the pickle file containing the offpulse times
-    Idea is to subtract mean and divide by the rms to normalize the time series
-    (making the noise ~1 and so the height of the signal is equal to the S/N)
-    Then to convert to physical units (Jy ms), we use the radiometer equation.
-    Also use same method to determine peak flux in physical units (Jy)
-    """
-    #t_cent = t_cent / tsamp  # in bins
-    #width = width / tsamp  # in bins
+    """Calculate the fluence, flux, and peak S/N.
 
-    #conv = 2.355
-    #width = int((width * 2. / conv))
-    #t_cent = int(t_cent)
+    To convert to physical units (Jy ms), we use empiric functions found for AO.
+    We also use same method to determine peak flux in physical units (Jy).
 
+    waterfall : The burst dynamic spectrum in S/N units, but only the window that should be used
+        for the calculations.
+    bw : The bandwidth of the channels in MHz
+    tsamp : The sampling time of the data in seconds
+    chan_freqs : Array with the channel center frequencies.
+    za : Zenith Angle at the time of the Burst.
+    """
     tsamp *= 1e3  # milliseconds
 
     profile_burst = np.sum(waterfall, axis=0)
     spec_burst = np.sum(waterfall, axis=1)
-# =============================================================================
-#
-#     plt.plot(profile, 'k')
-#     plt.axvline((t_cent - width), color='r')
-#     plt.axvline((t_cent + width), color='r')
-#
-#     plt.xlabel('Time bins')
-#     plt.ylabel('S/N')
-#     plt.savefig('burst_profile.pdf', format='pdf')
-#     plt.show()
-# =============================================================================
+
     chan_radiometer = radiometer(tsamp, bw, 2, chan_freqs, za)
 
     prof_flux = np.sum(waterfall * chan_radiometer[:, np.newaxis], axis=0)
@@ -141,25 +123,11 @@ def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
     fluence = prof_flux * tsamp # fluence
     peakSNR = np.max(profile_burst)
     flux = np.max(prof_flux)  # peak flux density
-    #prof_flux = profile * radiometer(tsamp, bw, 2, chan_freqs)
-    #spec_flux = spec_burst * radiometer(tsamp, bw, 2, chan_freqs)
 
     # assuming 20% error on SEFD dominates, even if you consider the errors on
     # width and add them in quadrature i.e.
     # sigma_flux**2+sigma_width**2=sigma_fluence**2, sigma_fluence~0.2
     fluence_error = 0.2 * fluence
-
-    # error_bin=(width_error/len(profile_burst))
-    # errors=[]
-    # for i in range(len(profile_burst)):
-    #    error_box=np.abs(profile_burst[i]*radiometer(tsamp,bw,2,SEFD)*tsamp)*np.sqrt((0.2)**2+(error_bin)**2)
-    #    errors=np.append(errors,error_box)
-
-    # x=0
-    # for i in range(len(errors)):
-    #    x+=errors[i]**2
-
-    # fluence_error=np.sqrt(x)
 
     return fluence, flux, peakSNR, fluence_error
 
@@ -237,12 +205,7 @@ if __name__ == '__main__':
         chan_bw = fits.specinfo.df
         bw = fits.specinfo.BW
 
-        #t_cent = pulses.loc[burst_id, 't_cent / s']
-        #t_std = pulses.loc[burst_id, 't_std / s']
-        #
         time_guesses = pulses.loc[burst_id, ('Guesses', 't_cent')]
-        #t_cent = pulses.loc[(burst_id, 'sb1'), ('Guesses', 't_cent')]
-        # Time before and after the burst in ms.
         tfit = pulses.loc[(burst_id, 'sb1'), ('General', 'tfit')]
         dm = pulses.loc[(burst_id, 'sb1'), ('General', 'DM')]
 
@@ -252,23 +215,14 @@ if __name__ == '__main__':
         waterfall = import_fil_fits.bandpass_calibration(waterfall, offpulsefile, tavg=1,
                                                          AO=True, smooth_val=None, plot=False)
 
+        # Take only the window around the burst that was used for fitting cause it's safe
+        # from dropouts.
         window_start = int(time_guesses.min() - tfit*1e-3/tsamp)
         widow_end = int(time_guesses.max() + tfit*1e-3/tsamp)
 
         waterfall = waterfall[:, window_start:widow_end]
 
-# =============================================================================
-#         if options.SEFD is None:
-#             if np.max(freqs) < 2000.:
-#                 print("Data is assumed to be L-band")
-#                 SEFD = 30 / 10.
-#             if np.max(freqs) >= 2000.:
-#                 print("Data is assumed to be C-band")
-#                 SEFD = 28. / 6.
-#         else:
-#             SEFD = options.SEFD
-# =============================================================================
-
+        # Calculate the zenith angle because AOs sensitivty depends on it.
         arecibo_coord = coord.EarthLocation.from_geodetic(
             lon=-(66. + 45./60. + 11.1/3600.)*u.deg,  # arecibo geodetic coords in deg
             lat=(18. + 20./60. + 36.6/3600.)*u.deg,
@@ -283,25 +237,26 @@ if __name__ == '__main__':
         altaz = R1_coord.transform_to(AltAz(location=arecibo_coord))
         za = 90 - altaz.alt.deg
 
+        # Put it all into that function.
         fluence, flux, peakSNR, fluence_error = fluence_flux(
                 waterfall, bw=chan_bw, tsamp=tsamp, chan_freqs=freqs, za=za)
 
-        for sb in pulses.loc[burst_id].index:
+        #for sb in pulses.loc[burst_id].index:
 
-            print("Peak S/N", peakSNR)
-            print("Fluence:", fluence, "+-", fluence_error, "Jy ms")
-            print("Peak Flux Density:", flux, "Jy")
+        print("Peak S/N", peakSNR)
+        print("Fluence:", fluence, "+-", fluence_error, "Jy ms")
+        print("Peak Flux Density:", flux, "Jy")
 
-            pulses.loc[(burst_id, sb), 'S/N Peak'] = peakSNR
-            pulses.loc[(burst_id, sb), 'Fluence / Jy ms'] = fluence
-            pulses.loc[(burst_id, sb), 'Fluence error / Jy ms'] = fluence_error
-            pulses.loc[(burst_id, sb), 'Peak Flux Density / Jy'] = flux
+        pulses.loc[burst_id, ('General', 'S/N Peak')] = peakSNR
+        pulses.loc[burst_id, ('General', 'Fluence / Jy ms')] = fluence
+        pulses.loc[burst_id, ('General', 'Fluence error / Jy ms')] = fluence_error
+        pulses.loc[burst_id, ('General', 'Peak Flux Density / Jy')] = flux
 
-            if options.distance is not None:
-                specenerg = energy_iso(fluence, options.distance)
-                print("Spectral energy density:", specenerg, r"erg Hz^-1")
-                pulses.loc[(burst_id, sb), 'Spectral Energy Density / erg Hz^-1'] = specenerg
-                pulses.loc[(burst_id, sb), 'Distance / Mpc'] = options.distance
+        if options.distance is not None:
+            specenerg = energy_iso(fluence, options.distance)
+            print("Spectral energy density:", specenerg, r"erg Hz^-1")
+            pulses.loc[burst_id,  ('General', 'Spectral Energy Density / erg Hz^-1')] = specenerg
+            pulses.loc[burst_id,  ('General', 'Distance / Mpc')] = options.distance
 
     pulses.to_hdf(out_hdf5_file, 'pulses')
 
