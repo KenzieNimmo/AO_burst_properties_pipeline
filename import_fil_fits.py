@@ -116,7 +116,7 @@ def fits_to_np(filename, dm=None, maskfile=None, AO=False, hdf5=None, index=None
         dm_const = (const.e.gauss**2/(2*np.pi*const.m_e*const.c)).to(u.cm**3/u.pc*u.MHz**2*u.s)
         f_top = fits.specinfo.hi_freq
         freqs = spec.freqs
-        dm = float(dm)
+        #dm = float(dm)
         shifts = np.round((dm_const.value*(1./(freqs)**2 - 1./(f_top)**2)*dm)/t_samp).astype(np.int)
         spec.shift_channels(shifts)
 
