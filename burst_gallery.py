@@ -6,7 +6,8 @@ Created on Mon Mar  8 13:26:15 2021
 @author: jjahns
 """
 import sys
-sys.path.append('/home/jjahns/Bursts/AO_burst_properties_pipeline/')
+#sys.path.append('/home/jjahns/Bursts/AO_burst_properties_pipeline/')
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import import_fil_fits
@@ -32,7 +33,7 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
     # Determine numbers of plots
     pulses = []
     for obs in obsis:
-        pulses.append(pd.read_hdf(f'/home/jjahns/Bursts/{obs}/pulses/{obs}_burst_properties.hdf5',
+        pulses.append(pd.read_hdf(f'{obs}/pulses/{obs}_burst_properties.hdf5',
                                   'pulses').sort_index())
     pulses = pd.concat(pulses)
     bright = pulses.groupby(level=0)[[('Drifting Gaussian', 'Amp')]].max() > 20
@@ -53,6 +54,9 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
         pulses_orig = pulses_orig.loc[pulses_orig['Pulse'] == 0].sort_values('Sigma', ascending=False)
 
         prop_file = f'{basename}/pulses/{basename}_burst_properties.hdf5'
+        if not os.path.isfile(prop_file):
+            print(f"skipping {basename}")
+            continue
         pulses = pd.read_hdf(prop_file, 'pulses').sort_values(('Guesses', 't_cent'))
 
         bright = pulses.groupby(level=0)[[('Drifting Gaussian', 'Amp')]].max() > 20
