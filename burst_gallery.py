@@ -32,9 +32,12 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
 
     # Determine numbers of plots
     pulses = []
-    for obs in obsis:
-        pulses.append(pd.read_hdf(f'{obs}/pulses/{obs}_burst_properties.hdf5',
-                                  'pulses').sort_index())
+    for basename in obsis:
+        prop_file = f'{basename}/pulses/{basename}_burst_properties.hdf5'
+        if not os.path.isfile(prop_file):
+            print(f"skipping {basename}")
+            continue
+        pulses.append(pd.read_hdf(prop_file).sort_index())
     pulses = pd.concat(pulses)
     bright = pulses.groupby(level=0)[[('Drifting Gaussian', 'Amp')]].max() > 20
     n_plots = np.count_nonzero((pulses.groupby(level=0).size() > 2) | bright.squeeze())
