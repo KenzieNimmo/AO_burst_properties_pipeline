@@ -3,13 +3,13 @@ Filterbank of burst -> fluence and peak flux density of the burst
 Kenzie Nimmo 2020
 """
 import numpy as np
-import matplotlib.pyplot as plt
-import pickle
 import sys
+import os
 import optparse
 from presto import psrfits
 import pandas as pd
-from astropy import time, coordinates as coord, units as u, constants as const, AltAz
+import warnings
+from astropy import time, coordinates as coord, units as u #, constants as const
 import import_fil_fits
 
 #hardcoded fit values for SEFD at different frequencies
@@ -69,10 +69,10 @@ def get_SEFD(za, give_freq):
     elif give_freq < nearest_frq1 and give_freq >= 1155:
         nearest_frq2 = frqs[frqs.index(nearest_frq1)-1]
     elif give_freq > 1666:
-        print('invalid freq, too high, using 1666 MHz')
+        #print('invalid freq, too high, using 1666 MHz')
         return SEFD(za, 1666)
     elif give_freq < 1155:
-        print('invalid freq, too low, using 1155 MHz')
+        #print('invalid freq, too low, using 1155 MHz')
         return SEFD(za, 1155)
 
     #interpolates a SEFD
@@ -114,22 +114,22 @@ def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
     tsamp *= 1e3  # milliseconds
 
     profile_burst = np.sum(waterfall, axis=0)
-    spec_burst = np.sum(waterfall, axis=1)
+    #spec_burst = np.sum(waterfall, axis=1)
 
     chan_radiometer = radiometer(tsamp, bw, 2, chan_freqs, za)
 
-    prof_flux = np.sum(waterfall * chan_radiometer[:, np.newaxis], axis=0)
+    #prof_flux = np.sum(waterfall * chan_radiometer[:, np.newaxis], axis=0)
 
-    fluence = prof_flux * tsamp # fluence
-    peakSNR = np.max(profile_burst)
-    flux = np.max(prof_flux)  # peak flux density
+    fluence = np.sum(waterfall * chan_radiometer[:, np.newaxis]) * tsamp
+    #peakSNR = np.max(profile_burst)
+    #flux = np.max(prof_flux)  # peak flux density
 
     # assuming 20% error on SEFD dominates, even if you consider the errors on
     # width and add them in quadrature i.e.
     # sigma_flux**2+sigma_width**2=sigma_fluence**2, sigma_fluence~0.2
-    fluence_error = 0.2 * fluence
+    #fluence_error = 0.2 * fluence
 
-    return fluence, flux, peakSNR, fluence_error
+    return fluence #, flux, peakSNR, fluence_error
 
 
 def energy_iso(fluence, distance_lum):
@@ -146,11 +146,11 @@ def energy_iso(fluence, distance_lum):
 
 
 if __name__ == '__main__':
+    warnings.filterwarnings("ignore", message="Polarization is AABBCRCI, averaging AA and BB")
+
     parser = optparse.OptionParser(usage='%prog [options] infile',
                                    description="Fluence and peak flux density of FRB. Input the "
                                                "pickle file output from fit_burst_fb.py.")
-    parser.add_option('-S', '--SEFD', dest='SEFD', type='float',
-                      help="System Equivalent Flux Density [Jy].", default=None)
     parser.add_option('-d', '--distance', dest='distance', type='float',
                       help="Distance to the FRB for energy calculation in Mpc (not required).",
                       default=None)
@@ -174,7 +174,8 @@ if __name__ == '__main__':
     in_hdf5_file = f'{basename}_burst_properties.hdf5'
     out_hdf5_file = in_hdf5_file
 
-    smooth = None  # smoothing value used for bandpass calibration
+    if not os.path.isfile(orig_in_hdf5_file) and os.path.isdir(basename):
+        os.chdir(os.path.join(basename, 'pulses'))
 
     pulses = pd.read_hdf(in_hdf5_file, 'pulses')
 
@@ -183,19 +184,19 @@ if __name__ == '__main__':
         burst_ids = [options.pulse]
     else:
         burst_ids = pulses.index.get_level_values(0).unique()
-        if 'Peak S/N' in pulses.columns:
-            not_processed = pulses.loc[(slice(None), 'sb1'), 'Peak S/N"'].isna()
+        if ('General', 'Fluence / Jy ms') in pulses.columns:
+            not_processed = pulses.loc[(slice(None), 'sb1'),  ('General', 'Fluence / Jy ms')].isna()
             burst_ids = burst_ids[not_processed]
 
     for burst_id in burst_ids:
         print("Fluence/Peak Flux Density of observation %s, pulse ID %s" %(basename, burst_id))
-        burst_dir = burst_id
-        filename = f'{burst_dir}/{basename}_{burst_id}.fits'
+        base_pulse = burst_id.split('-')[0]
+        filename = f'{base_pulse}/{basename}_{base_pulse}.fits'
 
         # read in mask file
-        maskfile = f'{burst_dir}/{basename}_{burst_id}_mask.pkl'
+        maskfile = f'{base_pulse}/{basename}_{base_pulse}_mask.pkl'
         # read in offpulse file
-        offpulsefile = f'{burst_dir}/{basename}_{burst_id}_offpulse_time.pkl'
+        offpulsefile = f'{base_pulse}/{basename}_{base_pulse}_offpulse_time.pkl'
 
         # Get observation parameters
         fits = psrfits.PsrfitsFile(filename)
@@ -211,7 +212,7 @@ if __name__ == '__main__':
 
         waterfall, t, peak_bin = import_fil_fits.fits_to_np(
             filename, dm=dm, maskfile=maskfile, AO=True,
-            hdf5=orig_in_hdf5_file, index=burst_id)
+            hdf5=orig_in_hdf5_file, index=base_pulse)
         waterfall = import_fil_fits.bandpass_calibration(waterfall, offpulsefile, tavg=1,
                                                          AO=True, smooth_val=None, plot=False)
 
@@ -223,34 +224,38 @@ if __name__ == '__main__':
         waterfall = waterfall[:, window_start:widow_end]
 
         # Calculate the zenith angle because AOs sensitivty depends on it.
-        arecibo_coord = coord.EarthLocation.from_geodetic(
-            lon=-(66. + 45./60. + 11.1/3600.)*u.deg,  # arecibo geodetic coords in deg
-            lat=(18. + 20./60. + 36.6/3600.)*u.deg,
-            height=497.*u.m)
+        # 20 is arbitrary but presto only gives the zenith angle of the first subint.
+        if fits.nsubints < 20:
+            za = fits.specinfo.zenith_ang
+        else:
+            arecibo_coord = coord.EarthLocation.from_geodetic(
+                lon=-(66. + 45./60. + 11.1/3600.)*u.deg,  # arecibo geodetic coords in deg
+                lat=(18. + 20./60. + 36.6/3600.)*u.deg,
+                height=497.*u.m)
 
-        file_tstart = fits.specinfo.start_MJD[0]
-        guess_mjd = file_tstart + time_guesses.mean()*tsamp / (24 * 3600)
-        guess_mjd = time.Time(guess_mjd, format='mjd', scale='utc', location=arecibo_coord)
+            file_tstart = fits.specinfo.start_MJD[0]
+            guess_mjd = file_tstart + time_guesses.mean()*tsamp / (24 * 3600)
+            guess_mjd = time.Time(guess_mjd, format='mjd', scale='utc', location=arecibo_coord)
 
-        R1_coord = coord.SkyCoord("05:31:58.698", "+33:08:52.586", unit=(u.hourangle, u.deg),
-                                  frame='icrs', obstime=guess_mjd)
-        altaz = R1_coord.transform_to(AltAz(location=arecibo_coord))
-        za = 90 - altaz.alt.deg
+            R1_coord = coord.SkyCoord(fits.specinfo.ra_str, fits.specinfo.dec_str,
+                                      unit=(u.hourangle, u.deg), frame='icrs', obstime=guess_mjd)
+            altaz = R1_coord.transform_to(coord.AltAz(location=arecibo_coord))
+            za = 90 - altaz.alt.deg
 
-        # Put it all into that function.
-        fluence, flux, peakSNR, fluence_error = fluence_flux(
+        # Put it all into that function. , flux, peakSNR, fluence_error
+        fluence = fluence_flux(
                 waterfall, bw=chan_bw, tsamp=tsamp, chan_freqs=freqs, za=za)
 
         #for sb in pulses.loc[burst_id].index:
 
-        print("Peak S/N", peakSNR)
-        print("Fluence:", fluence, "+-", fluence_error, "Jy ms")
-        print("Peak Flux Density:", flux, "Jy")
+        #print("Peak S/N", peakSNR)
+        print("Fluence:", fluence) #, "+-", fluence_error, "Jy ms")
+        #print("Peak Flux Density:", flux, "Jy")
 
-        pulses.loc[burst_id, ('General', 'S/N Peak')] = peakSNR
+        #pulses.loc[burst_id, ('General', 'S/N Peak')] = peakSNR
         pulses.loc[burst_id, ('General', 'Fluence / Jy ms')] = fluence
-        pulses.loc[burst_id, ('General', 'Fluence error / Jy ms')] = fluence_error
-        pulses.loc[burst_id, ('General', 'Peak Flux Density / Jy')] = flux
+        #pulses.loc[burst_id, ('General', 'Fluence error / Jy ms')] = fluence_error
+        #pulses.loc[burst_id, ('General', 'Peak Flux Density / Jy')] = flux
 
         if options.distance is not None:
             specenerg = energy_iso(fluence, options.distance)
@@ -258,5 +263,7 @@ if __name__ == '__main__':
             pulses.loc[burst_id,  ('General', 'Spectral Energy Density / erg Hz^-1')] = specenerg
             pulses.loc[burst_id,  ('General', 'Distance / Mpc')] = options.distance
 
-    pulses.to_hdf(out_hdf5_file, 'pulses')
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+            pulses.to_hdf(out_hdf5_file, 'pulses')
 
