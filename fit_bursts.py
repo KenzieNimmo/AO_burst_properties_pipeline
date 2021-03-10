@@ -117,14 +117,14 @@ if __name__ == '__main__':
         dm = pulses.loc[(pulse_id, 'sb1'), ('General','DM')]
         amp_guesses = pulses.loc[pulse_id, ('Guesses', 'Amp')]
         time_guesses = pulses.loc[pulse_id, ('Guesses', 't_cent')] / tavg
-        freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')] // subb
+        freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')]
 
         # Define the window to be shown.
         begin_samp = int(time_guesses.min() - 30e-3 / tsamp)
         end_samp = int(time_guesses.max() + 30e-3 / tsamp)
 
         waterfall, t_ref, _ = import_fil_fits.fits_to_np(
-            filename, dm=dm, maskfile=maskfile, AO=True, smooth_val=smooth,
+            filename, dm=dm, maskfile=maskfile, AO=True,
             hdf5=orig_in_hdf5_file, index=base_pulse, tavg=tavg)
         waterfall = import_fil_fits.bandpass_calibration(waterfall, offpulsefile, tavg=tavg,
                                                          AO=True, smooth_val=None, plot=False)
