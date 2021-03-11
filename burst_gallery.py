@@ -64,7 +64,7 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
         pulses = pd.read_hdf(prop_file, 'pulses').sort_values(('Guesses', 't_cent'))
 
         in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
-        bright = ((pulses.loc[('Drifting Gaussian', 'Amp')] > 10) & in_band).groupby(level=0).max()
+        bright = ((pulses[('Drifting Gaussian', 'Amp')] > 10) & in_band).groupby(level=0).max()
         pulse_ids = (pulses.groupby(level=0).size() > 2) | bright.squeeze()
         pulse_ids = pulse_ids[pulse_ids].index
 
