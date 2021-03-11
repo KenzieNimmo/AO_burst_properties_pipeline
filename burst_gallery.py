@@ -21,7 +21,7 @@ from glob import glob
 from presto import psrfits
 from fit_bursts import ds
 
-def plot_gallery(basename=None, tavg=8, subb=1, width=20):
+def plot_gallery(basename=None, tavg=8, subb=1, width=20, cut_snr=10):
     warnings.filterwarnings("ignore", message="Polarization is AABBCRCI, averaging AA and BB")
 
     if not basename == None:
@@ -40,7 +40,7 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
         pulses.append(pd.read_hdf(prop_file).sort_index())
     pulses = pd.concat(pulses)
     in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
-    bright = ((pulses[('Drifting Gaussian', 'Amp')] > 10) & in_band).groupby(level=0).max()
+    bright = ((pulses[('Drifting Gaussian', 'Amp')] > cut_snr) & in_band).groupby(level=0).max()
     n_plots = np.count_nonzero((pulses.groupby(level=0).size() > 2) | bright.squeeze())
 
     # Prepare plot layout
@@ -64,7 +64,7 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
         pulses = pd.read_hdf(prop_file, 'pulses').sort_values(('Guesses', 't_cent'))
 
         in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
-        bright = ((pulses[('Drifting Gaussian', 'Amp')] > 10) & in_band).groupby(level=0).max()
+        bright = ((pulses[('Drifting Gaussian', 'Amp')] > cut_snr) & in_band).groupby(level=0).max()
         pulse_ids = (pulses.groupby(level=0).size() > 2) | bright.squeeze()
         pulse_ids = pulse_ids[pulse_ids].index
 
@@ -160,6 +160,8 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--subb', type=int, default=1,
                         help="If -s option is used, subbanding is applied using the factor "
                              "given after -s.")
+    parser.add_argument('-c', '--cut_snr', type=int, default=1,
+                        help="The lower limit for peak SNR.")
 
     args = parser.parse_args()
     print(args)
