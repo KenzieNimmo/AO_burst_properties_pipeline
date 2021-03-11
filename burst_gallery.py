@@ -39,7 +39,8 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
             continue
         pulses.append(pd.read_hdf(prop_file).sort_index())
     pulses = pd.concat(pulses)
-    bright = pulses.groupby(level=0)[[('Drifting Gaussian', 'Amp')]].max() > 20
+    in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
+    bright = ((pulses.loc[('Drifting Gaussian', 'Amp')] > 10) & in_band).groupby(level=0).max()
     n_plots = np.count_nonzero((pulses.groupby(level=0).size() > 2) | bright.squeeze())
 
     # Prepare plot layout
@@ -62,7 +63,8 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20):
             continue
         pulses = pd.read_hdf(prop_file, 'pulses').sort_values(('Guesses', 't_cent'))
 
-        bright = pulses.groupby(level=0)[[('Drifting Gaussian', 'Amp')]].max() > 20
+        in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
+        bright = ((pulses.loc[('Drifting Gaussian', 'Amp')] > 10) & in_band).groupby(level=0).max()
         pulse_ids = (pulses.groupby(level=0).size() > 2) | bright.squeeze()
         pulse_ids = pulse_ids[pulse_ids].index
 
