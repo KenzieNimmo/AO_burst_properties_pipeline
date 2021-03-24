@@ -32,23 +32,13 @@ def fit_multiple_1d_gaussians(x_data, y_data, amp_guess, x_guess, std_guess, wei
 
     return gaussians, fitter
 
-# =============================================================================
-#         corr = np.array(cov_mat)
-#         corr /= bunc
-#         corr = corr.T/bunc
-#         fig = plt.figure(figsize=(6,5))
-#         plt.imshow(corr, vmin=-1, vmax=1)
-#         plt.colorbar()
-#         plt.title('Correlation matrix')
-#         plt.xticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
-#         plt.yticks(range(6), ['Amp', 't', 'f', 't_std', 'f_std', 'Angle'])
-# =============================================================================
 
 def fit_time_and_freq(waterfall, tsamp, freqs, offpulsefile, amp_guess, t_guess, t_std_g, f_guess,
                       f_std_g, t_fit, downs, make_plot=False):
     """
     waterfall : waterfall bandpass corrected to SNR
     """
+
     # Give default values if t_std and f_std are not given
     t_std_g[t_std_g.isna()] = 1e-3  # 1ms
     f_std_g[f_std_g.isna()] = 100   # 100 MHz
@@ -84,8 +74,7 @@ def fit_time_and_freq(waterfall, tsamp, freqs, offpulsefile, amp_guess, t_guess,
 
     if cov_mat is None:
         print("No covariance matrix was returned. " + fitter.fit_info['message'])
-        uncert = np.zeros_like(gauss_params)
-        uncert[:] = np.nan
+        uncert = np.full(gauss_params.size, np.nan)
     else:
         print(f"The fit converged after {fitter.fit_info['nfev']} iterations")
         uncert = np.sqrt(np.diag(cov_mat))
@@ -248,3 +237,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     fit_observation(**vars(args))
+# =============================================================================
+#     basename='puppi_58432_C0531+33_0035'
+#     fit_observation(basename, pulse='51', tavg=8)
+# =============================================================================
