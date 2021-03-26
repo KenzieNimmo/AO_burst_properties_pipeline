@@ -70,7 +70,7 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20, cut_snr=10):
         #pulse_ids = (pulses.groupby(level=0).size() > 2) | bright.squeeze()
         pulse_ids = pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] > 2e32
 
-        pulse_ids = pulse_ids[pulse_ids].index
+        pulse_ids = pulse_ids[pulse_ids].index.get_level_values(0)
 
         for pulse_id in pulse_ids:
             print(f"Plotting burst {plot_nr+1} out of {n_plots}.")
@@ -164,10 +164,9 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--subb', type=int, default=1,
                         help="If -s option is used, subbanding is applied using the factor "
                              "given after -s.")
-    parser.add_argument('-c', '--cut_snr', type=int, default=1,
+    parser.add_argument('-c', '--cut_snr', type=int, default=3,
                         help="The lower limit for peak SNR.")
 
     args = parser.parse_args()
     print(args)
     plot_gallery(**vars(args))
-
