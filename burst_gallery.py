@@ -43,7 +43,8 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20, cut_snr=10):
     #in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
     #bright = ((pulses[('Drifting Gaussian', 'Amp')] > cut_snr) & in_band).groupby(level=0).max()
     #n_plots = np.count_nonzero((pulses.groupby(level=0).size() > 2) | bright.squeeze())
-    n_plots = np.count_nonzero(pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] > 2e32)
+    n_plots = np.count_nonzero((pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] < 2e32)
+                               & (pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] > 1e32))
 
     # Prepare plot layout
     cols = 5
@@ -68,7 +69,8 @@ def plot_gallery(basename=None, tavg=8, subb=1, width=20, cut_snr=10):
         #in_band = (pulses[('Drifting Gaussian', 'f_cent / MHz')] > 1100) & (pulses[('Drifting Gaussian', 'f_cent / MHz')] < 1800)
         #bright = ((pulses[('Drifting Gaussian', 'Amp')] > cut_snr) & in_band).groupby(level=0).max()
         #pulse_ids = (pulses.groupby(level=0).size() > 2) | bright.squeeze()
-        pulse_ids = pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] > 2e32
+        pulse_ids = ((pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] < 2e32)
+                    & (pulses.loc[(slice(None), 'sb1'), ('General', 'Spectral Energy Density / erg Hz^-1')] > 1e32))
 
         pulse_ids = pulse_ids[pulse_ids].index.get_level_values(0)
 
