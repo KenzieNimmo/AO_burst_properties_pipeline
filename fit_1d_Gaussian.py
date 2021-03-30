@@ -162,9 +162,17 @@ def fit_observation(basename, orig_hdf5_file=None, propery_hdf5=None, pulse=None
 
         amp_guesses = pulses.loc[pulse_id, ('Guesses', 'Amp')]
         time_guesses = pulses.loc[pulse_id, ('Guesses', 't_cent')] / tavg
-        t_std_guess = pulses.loc[pulse_id, ('Guesses', 't_std')] / 1e3  # ms to s
         freq_peak_guess = pulses.loc[pulse_id, ('Guesses', 'f_cent')]
-        f_std_guess = pulses.loc[pulse_id, ('Guesses', 'f_std')]
+        if ('Guesses', 't_std') in pulses.columns:
+            t_std_guess = pulses.loc[pulse_id, ('Guesses', 't_std')] / 1e3  # ms to s
+        else:
+            t_std_guess = amp_guesses.copy()
+            t_std_guess[:] = np.nan
+        if ('Guesses', 'f_std') in pulses.columns:
+            f_std_guess = pulses.loc[pulse_id, ('Guesses', 'f_std')]
+        else:
+            f_std_guess = amp_guesses.copy()
+            f_std_guess[:] = np.nan
 
         # Load the data.
         waterfall, t_ref, _ = import_fil_fits.fits_to_np(
