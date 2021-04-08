@@ -1,12 +1,13 @@
 ###requires astropy 2.0 and python3. Will not work with numpy v1.14 due to a numpy function bug###
 ###Kenzie Nimmo 2020
-
-import sys
+import os
 import argparse
+import warnings
 import pandas as pd
 
 from math import pi
 from astropy import time, coordinates as coord, units as u, constants as const
+from glob import glob
 
 
 def get_bary(toas, source, location):
@@ -74,45 +75,44 @@ if __name__ == '__main__':
         usage='%prog infile_basename',
         description="Correcting the peak time of the burst to the Solar System Barycentre, "
         "corrected to infinite frequency")
-    parser.add_argument('infile_basename')
+    parser.add_argument('-b','--basename', type=str, default=None,
+                        help='The base of the observation (e.g. puppi_58564_C0531+33_0020)')
     args = parser.parse_args()
 
-    if len(sys.argv) <= 1:
-        parser.print_help()
-        sys.exit(1)
-    elif len(sys.argv) != 2:
-        sys.stderr.write("Only one input file must be provided!\n")
+    if not args.basename == None:
+        obsis = [args.basename]
     else:
-        basename = args.infile_basename
+        obsis = sorted(glob('puppi*'))
 
-    in_hdf5_file = '%s_burst_properties.hdf5' % basename
+    for basename in obsis:
+        prop_file = f'{basename}/pulses/{basename}_burst_properties.hdf5'
+        if not os.path.isfile(prop_file):
+            prop_file = f'{basename}_burst_properties.hdf5'
+            if not os.path.isfile(prop_file):
+                print(f"skipping {basename}")
+                continue
+        pulses = pd.read_hdf(prop_file, 'pulses')
 
-    out_hdf5_file = in_hdf5_file
+        print(f"Finding the time of arrivals (barycentre corrected) of observation {basename}")
 
-    pulses = pd.read_hdf(in_hdf5_file, 'pulses')
+        # beginning MJD of file
+        obs_start = pulses[('General', 't_obs / MJD')]  # MJD
+        # dm of burst
+        dm = pulses[('General','DM')]
+        # Reference Frequency, using the top of the band as reference (same as PRESTO and
+        # spectra.dedisperse from psrfits.py)
+        ref_freq = pulses[('General', 'f_ref / MHz')]
 
-    #pulse_ids = pulses.index.get_level_values(0).unique()
-    #if 'TOA / MJD' in pulses.columns:
-    #    not_processed = pulses.loc[(slice(None), 'sb1'), 'TOA / MJD'].isna()
-    #    pulse_ids = pulse_ids[not_processed]
+        for model_name in ['2D Gaussian','Drifting Gaussian', 'Gaussian']:
+            # time of pulse in file
+            t_burst = pulses[(model_name, 't_cent / s')]  # in seconds
 
-    print(f"Finding the time of arrivals (barycentre corrected) of observation {basename}")
+            toas_ref_freq, toas = barycorr(obs_start, t_burst, ref_freq, dm, FRB='R1', telescope='Arecibo')
 
-    # beginning MJD of file
-    obs_start = pulses[('General', 't_obs / MJD')]  # MJD
-    # dm of burst
-    dm = pulses[('General','DM')]
-    # Reference Frequency, using the top of the band as reference (same as PRESTO and
-    # spectra.dedisperse from psrfits.py)
-    ref_freq = pulses[('General', 'f_ref / MHz')]
+            pulses[(model_name, 'TOA at f_ref / MJD')] = toas_ref_freq
+            pulses[(model_name, 'TOA / MJD')] = toas
 
-    for model_name in ['2D Gaussian','Drifting Gaussian']:
-        # time of pulse in file
-        t_burst = pulses[(model_name, 't_cent / s')]  # in seconds
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+            pulses.to_hdf(prop_file, 'pulses')
 
-        toas_ref_freq, toas = barycorr(obs_start, t_burst, ref_freq, dm, FRB='R1', telescope='Arecibo')
-
-        pulses[(model_name, 'TOA at f_ref / MJD')] = toas_ref_freq
-        pulses[(model_name, 'TOA / MJD')] = toas
-
-    pulses.to_hdf(out_hdf5_file, 'pulses')
