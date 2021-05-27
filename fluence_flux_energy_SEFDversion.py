@@ -6,12 +6,14 @@ import numpy as np
 import sys
 import os
 import optparse
-from presto import psrfits
+import pickle
 import pandas as pd
 import warnings
 from astropy import time, coordinates as coord, units as u #, constants as const
-import import_fil_fits
 
+from presto import psrfits
+
+import import_fil_fits
 #hardcoded fit values for SEFD at different frequencies
 popt1155=np.array([  0.02744894,   1.11956666,   2.56991623, -16.95838086, 4.52554854])
 popt1310=np.array([  0.03635505,   1.13631723,   2.14199018, -12.78659945, 3.63049544])
@@ -83,7 +85,7 @@ def get_SEFD(za, give_freq):
     return vall
 
 
-def radiometer(tsamp, bw, npol, cntr_freqs, za):
+def radiometer(tsamp, bw, npol, cntr_freq, za):
     """
     radiometer(tsamp, bw, npol, Tsys, G):
     tsamp is the time resolution in milliseconds
@@ -94,11 +96,40 @@ def radiometer(tsamp, bw, npol, cntr_freqs, za):
     Tsys is the system temperature in K (typical value for Effelsberg = 20K)
     G is the telescope gain in K/Jy (typical value for Effelsberg = 1.54K/Jy)
     """
-    SEFD = np.array([get_SEFD(za, cntr_freq) for cntr_freq in cntr_freqs])
-    return (SEFD) * (1 / np.sqrt((bw * 1.e6) * npol * tsamp * 1e-3))
+    if isinstance(cntr_freq, (list, tuple, np.ndarray)):
+        SEFD = np.array([get_SEFD(za, cntr_f) for cntr_f in cntr_freq])
+    else:
+        SEFD = get_SEFD(za, cntr_freq)
+    return SEFD / np.sqrt(npol * (bw * 1.e6) * tsamp * 1e-3)
 
 
-def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
+def calc_fluence(waterfall, chan_bw, tsamp, chan_freqs, za):
+    """Calculate the fluence, flux, and peak S/N.
+    To convert to physical units (Jy ms), we use empiric functions found for AO.
+    We also use same method to determine peak flux in physical units (Jy).
+    waterfall : The burst dynamic spectrum in S/N units, but only the window that should be used
+        for the calculations.
+    bw : The bandwidth of the channels in MHz
+    tsamp : The sampling time of the data in seconds
+    chan_freqs : Array with the channel center frequencies.
+    za : Zenith Angle at the time of the Burst.
+    """
+    tsamp *= 1e3  # milliseconds
+
+    spectrum = np.sum(waterfall, axis=1) * tsamp
+
+    chan_radiometer = radiometer(tsamp, chan_bw, 2, chan_freqs, za)
+
+    fluence = np.mean(spectrum * chan_radiometer)
+
+    # dunno how called
+    for_energy = np.mean(spectrum * chan_radiometer * chan_freqs * 1e6) #to Hz
+
+    return fluence, for_energy
+
+
+def fluence_estimate(waterfall, chan_bw, tsamp, central_freq, za, offpulsefile,
+                 window_start, window_end):
     """Calculate the fluence, flux, and peak S/N.
 
     To convert to physical units (Jy ms), we use empiric functions found for AO.
@@ -113,23 +144,19 @@ def fluence_flux(waterfall, bw, tsamp, chan_freqs, za):
     """
     tsamp *= 1e3  # milliseconds
 
-    profile_burst = np.sum(waterfall, axis=0)
-    #spec_burst = np.sum(waterfall, axis=1)
+    offpulse = pickle.load(open(offpulsefile, 'rb'))
 
-    chan_radiometer = radiometer(tsamp, bw, 2, chan_freqs, za)
+    time_series = np.sum(waterfall, axis=0)
+    time_series -= time_series[offpulse].mean()
+    time_series /= time_series[offpulse].std()
+    time_series = time_series[window_start:window_end]
 
-    #prof_flux = np.sum(waterfall * chan_radiometer[:, np.newaxis], axis=0)
+    bw = chan_bw * np.sum(~waterfall.mask[:, window_start])
+    chan_radiometer = radiometer(tsamp, bw, 2, central_freq, za)
 
-    fluence = np.sum(waterfall * chan_radiometer[:, np.newaxis]) * tsamp
-    #peakSNR = np.max(profile_burst)
-    #flux = np.max(prof_flux)  # peak flux density
+    fluence = time_series.sum() * radiometer(tsamp, bw, 2, central_freq, za) * tsamp
 
-    # assuming 20% error on SEFD dominates, even if you consider the errors on
-    # width and add them in quadrature i.e.
-    # sigma_flux**2+sigma_width**2=sigma_fluence**2, sigma_fluence~0.2
-    #fluence_error = 0.2 * fluence
-
-    return fluence #, flux, peakSNR, fluence_error
+    return fluence
 
 
 def energy_iso(fluence, distance_lum):
@@ -156,6 +183,8 @@ if __name__ == '__main__':
                       default=None)
     parser.add_option('-p', '--pulse', type='str', default=None,
                       help="Give a pulse id to process only this pulse.")
+    parser.add_option('-r', '--reproc', default=False, action='store_true',
+                      help="Reprocess all bursts.")
 
     options, args = parser.parse_args()
 
@@ -184,7 +213,7 @@ if __name__ == '__main__':
         burst_ids = [options.pulse]
     else:
         burst_ids = pulses.index.get_level_values(0).unique()
-        if ('General', 'Fluence / Jy ms') in pulses.columns:
+        if not options.reproc and ('General', 'Fluence / Jy ms') in pulses.columns:
             not_processed = pulses.loc[(slice(None), 'sb1'),  ('General', 'Fluence / Jy ms')].isna()
             burst_ids = burst_ids[not_processed]
 
@@ -204,9 +233,9 @@ if __name__ == '__main__':
         freqs = fits.frequencies
         nchan = fits.specinfo.num_channels
         chan_bw = fits.specinfo.df
-        bw = fits.specinfo.BW
 
         time_guesses = pulses.loc[burst_id, ('Guesses', 't_cent')]
+        freq_peak_guess = pulses.loc[burst_id, ('Guesses', 'f_cent')]
         tfit = pulses.loc[(burst_id, 'sb1'), ('General', 'tfit')]
         dm = pulses.loc[(burst_id, 'sb1'), ('General', 'DM')]
 
@@ -221,10 +250,9 @@ if __name__ == '__main__':
         window_start = int(time_guesses.min() - tfit*1e-3/tsamp)
         widow_end = int(time_guesses.max() + tfit*1e-3/tsamp)
 
-        waterfall = waterfall[:, window_start:widow_end]
-
         # Calculate the zenith angle because AOs sensitivty depends on it.
-        # 20 is arbitrary but presto only gives the zenith angle of the first subint.
+        # 20 is arbitrary but presto only gives the zenith angle of the first subint
+        # (although the rest is in the fits file as well).
         if fits.nsubints < 20:
             za = fits.specinfo.zenith_ang
         else:
@@ -243,24 +271,24 @@ if __name__ == '__main__':
             za = 90 - altaz.alt.deg
 
         # Put it all into that function. , flux, peakSNR, fluence_error
-        fluence = fluence_flux(
-                waterfall, bw=chan_bw, tsamp=tsamp, chan_freqs=freqs, za=za)
+        fluence_est = fluence_estimate(waterfall, chan_bw, tsamp, freq_peak_guess.mean(), za,
+                                       offpulsefile, window_start, widow_end)
 
-        #for sb in pulses.loc[burst_id].index:
+        waterfall = waterfall[:, window_start:widow_end]
+        fluence, for_energy = calc_fluence(waterfall, chan_bw, tsamp, freqs, za)
 
-        #print("Peak S/N", peakSNR)
-        print("Fluence:", fluence) #, "+-", fluence_error, "Jy ms")
-        #print("Peak Flux Density:", flux, "Jy")
+        print("Fluence:", fluence, "Jy ms")
+        print("Fluence estimate:", fluence_est, "Jy ms")
 
-        #pulses.loc[burst_id, ('General', 'S/N Peak')] = peakSNR
         pulses.loc[burst_id, ('General', 'Fluence / Jy ms')] = fluence
-        #pulses.loc[burst_id, ('General', 'Fluence error / Jy ms')] = fluence_error
-        #pulses.loc[burst_id, ('General', 'Peak Flux Density / Jy')] = flux
+        pulses.loc[burst_id, ('General', 'Fluence estimate / Jy ms')] = fluence_est
 
         if options.distance is not None:
             specenerg = energy_iso(fluence, options.distance)
+            energy = energy_iso(for_energy, options.distance)
             print("Spectral energy density:", specenerg, r"erg Hz^-1")
             pulses.loc[burst_id,  ('General', 'Spectral Energy Density / erg Hz^-1')] = specenerg
+            pulses.loc[burst_id,  ('General', 'Energy / erg')] = energy
             pulses.loc[burst_id,  ('General', 'Distance / Mpc')] = options.distance
 
         with warnings.catch_warnings():
