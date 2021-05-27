@@ -235,30 +235,36 @@ def average_averages(file_names):
     # Save new file
     np.savez(f'mean_of_means_of_{n_averaged}', n_averaged=n_averaged, tsamp=tsamp,
              freqs=freqs, chan_weights=chan_weights, mean_array=mean_array)
-    plot_waterfall(mean_array, 1e3*np.arange(tsamp*mean_array.shape[1], step=tsamp),
+    fig = plot_waterfall(mean_array, 1e3*np.arange(tsamp*mean_array.shape[1], step=tsamp),
                    freqs, chan_weights,
                    title=f'Average burst of {n_averaged} bursts over several observations')
+    fig.savefig(f'average_of_{n_averaged}_bursts.png')
 
 
-def plot_from_file(file_name, titel=''):
+def plot_from_file(file_name):
     data = np.load(file_name)
     n_averaged, tsamp, freqs, chan_weights, mean_array = [data[key] for key in data.files]
-    plot_waterfall(mean_array, 1e3*np.arange(tsamp*mean_array.shape[1], step=tsamp),
-                   freqs, chan_weights, title=titel)
+    title = os.path.basename(file_name)
+    title = os.path.splitext(title)[0]
+    fig = plot_waterfall(mean_array, 1e3*np.arange(tsamp*mean_array.shape[1], step=tsamp),
+                   freqs, chan_weights, title=title)
+    fig.savefig(f'{title}.png')
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('basename',
-                        help='The base of the observation (e.g. puppi_58564_C0531+33_0020)')
-    parser.add_argument('-p', '--pulse', type=str, help="Give a pulse id to process only this pulse.")
-    parser.add_argument('-t', '--tavg', dest='tavg', type=int, default=1,
-                      help="If -t option is used, time averaging is applied using the factor "
-                           "given after -t.")
-
-    args = parser.parse_args()
-
-    average_observation(**vars(args))
+# =============================================================================
+#
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser(description=__doc__)
+#     parser.add_argument('basename',
+#                         help='The base of the observation (e.g. puppi_58564_C0531+33_0020)')
+#     parser.add_argument('-p', '--pulse', type=str, help="Give a pulse id to process only this pulse.")
+#     parser.add_argument('-t', '--tavg', dest='tavg', type=int, default=1,
+#                       help="If -t option is used, time averaging is applied using the factor "
+#                            "given after -t.")
+#
+#     args = parser.parse_args()
+#
+#     average_observation(**vars(args))
+# =============================================================================
 # =============================================================================
 #     basename='puppi_58432_C0531+33_0035'
 #     average_observation(basename, tavg=8)
