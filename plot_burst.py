@@ -70,8 +70,8 @@ class identify_bursts(object):
 
         fig = plt.figure('Identify bursts', figsize=(16, 10))
         #plt.title()
-        self.ax_data = plt.subplot(gs[2])  # dynamic spectrum
-        self.ax_ts = plt.subplot(gs[0], sharex=self.ax_data)  # time series
+        self.ax_data = plt.subplot(gs[2])                        # dynamic spectrum
+        self.ax_ts = plt.subplot(gs[0], sharex=self.ax_data)     # time series
         self.ax_spec = plt.subplot(gs[-1], sharey=self.ax_data)  # spectrum
         self.canvas = self.ax_data.figure.canvas
 
@@ -101,31 +101,38 @@ class identify_bursts(object):
         #self.cid = self.canvas.mpl_connect('button_press_event', self.onpress)
         self.keyPress = self.canvas.mpl_connect('key_press_event', self.onKeyPress)
 
-        slope = 1e8
-        #off = 0.
-        def nu_qube_term(nu, b, e=-2):
-            return b*nu**e
-        self.ax_data.plot([peak_time]*freqs.shape[0], freqs)
-        #line, = self.ax_data.plot(off + peak_time + nu_qube_term(freqs, slope)-nu_qube_term(freqs[0], slope), freqs)
-        line, = self.ax_data.plot(nu_qube_term(freqs, slope), freqs)
+
+        freq_top = freqs[arr.mask[:, 0].argmin()]
+        freq_bottom = freqs[arr.shape[0] - (arr.mask[::-1, 0].argmin()+1)]
+
+        t_bottom = 1.24
+        #peak_time += 20
+        off = peak_time
+        def nu_qube_term(nu, t_bottom, e=-2):
+            dm_const = 4148806  # using the DM constant to have it easily comparable
+            b = t_bottom/dm_const/(freq_bottom**e-freq_top**e)
+            return b*dm_const*(nu**e-freq_top**e)
+        #self.ax_data.plot([peak_time]*freqs.shape[0], freqs)
+        #line, = self.ax_data.plot(off + nu_qube_term(freqs, t_bottom), freqs)
+        ###line, = self.ax_data.plot(nu_qube_term(freqs, slope), freqs)
 
         axoff = plt.axes([0.01, 0.01, 0.3, 0.02])
         axslope = plt.axes([0.6, 0.01, 0.3, 0.02])
         axexp = plt.axes([0.6, 0.03, 0.3, 0.02])
-        #off_slider = Slider(axoff, 'Offset', peak_time - 10, peak_time + 10, valinit=peak_time)
-        slope_slider = Slider(axslope, 'Slope', 0, 2*slope, valinit=slope)
-        exp_slider = Slider(axexp, 'Exponent', -6, 0, valinit=-2)
-        t0_slider = Slider(axoff, 't_0', 0, tsamp*1000*profile.shape[0], valinit=0)
+        off_slider = Slider(axoff, 'Offset', peak_time - 10, peak_time + 10, valinit=peak_time)
+        slope_slider = Slider(axslope, 't_bottom', 0, 3, valinit=t_bottom)
+        exp_slider = Slider(axexp, 'Exponent', -6, 0, valinit=-3.45)
+        #t0_slider = Slider(axoff, 't_0', -tsamp*1000*profile.shape[0]/2, tsamp*1000*profile.shape[0]/2, valinit=0)
 
         def sliders_on_changed(val):
-            #off = off_slider.val
-            slope = slope_slider.val
+            off = off_slider.val
+            t_bottom = slope_slider.val
             expo = exp_slider.val
-            #line.set_xdata(off + nu_qube_term(freqs, slope, e=expo)-nu_qube_term(freqs[0], slope, e=expo))
-            line.set_xdata(nu_qube_term(freqs, slope, e=expo))
+            line.set_xdata(off + nu_qube_term(freqs, t_bottom, e=expo))
+            #line.set_xdata(nu_qube_term(freqs, slope, e=expo))
             fig.canvas.draw_idle()
 
-        #off_slider.on_changed(sliders_on_changed)
+        off_slider.on_changed(sliders_on_changed)
         slope_slider.on_changed(sliders_on_changed)
         exp_slider.on_changed(sliders_on_changed)
 
@@ -136,7 +143,7 @@ class identify_bursts(object):
             self.ts_plot.set_xdata(t0 + tsamp*1000*np.arange(profile.shape[0]))
             fig.canvas.draw_idle()
 
-        t0_slider.on_changed(t0_change)
+        #t0_slider.on_changed(t0_change)
 
         plt.show()
         #indices = np.array(self.peak_times).argsort()
