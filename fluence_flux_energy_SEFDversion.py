@@ -116,11 +116,14 @@ def calc_fluence(waterfall, chan_bw, tsamp, chan_freqs, za):
     """
     tsamp *= 1e3  # milliseconds
 
-    spectrum = np.sum(waterfall, axis=1) * tsamp
+    spectrum = np.sum(waterfall * tsamp, axis=1)
 
     chan_radiometer = radiometer(tsamp, chan_bw, 2, chan_freqs, za)
 
     fluence = np.mean(spectrum * chan_radiometer)
+
+    #flux = np.mean(waterfall * chan_radiometer[np.newaxis, :], axis=0)
+    #fluence = np.sum(flux * tsamp)
 
     # dunno how called
     for_energy = np.mean(spectrum * chan_radiometer * chan_freqs * 1e6) #to Hz
